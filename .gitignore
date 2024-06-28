@@ -7,3 +7,7 @@ cover.out
 .vscode
 .idea
 .DS_Store
+**/aws-credentials.txt
+**/id_ed25519*
+**/*.xpkg
+examples-kustomize/**/private-*/

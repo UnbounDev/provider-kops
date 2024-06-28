@@ -1,0 +1,67 @@
+
+#kind: Kustomization
+
+namePrefix: simple-
+
+resources:
+- ./../../base-simple
+
+configurations:
+- kustomizeconfig/clusterType.yaml
+
+images:
+- name: ami
+  newName: ami-0a0e5d9c7acc336f1
+
+patches:
+- target:
+    kind: Cluster
+  patch: |-
+    apiVersion: kops.crossplane.io/v1alpha1
+    kind: Cluster
+    metadata:
+      # name not used; ref https://kubectl.docs.kubernetes.io/references/kustomize/kustomization/patches/#patch-using-inline-strategic-merge
+      name: not-used
+      labels:
+        kops: xplane-kops
+    spec:
+      forProvider:
+        state: s3://your-bucket
+        cluster:
+          kubernetesVersion: v1.29.6
+          networkCIDR: yourVpcNetworkCidr
+          networkID: yourVpcId
+          subnets:
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: ext-0
+            type: Utility
+            zone: yourSubnetRegion
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: ext-1
+            type: Utility
+            zone: yourSubnetRegion
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: ext-2
+            type: Utility
+            zone: yourSubnetRegion
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: cluster-0
+            type: Private
+            zone: yourSubnetRegion
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: cluster-1
+            type: Private
+            zone: yourSubnetRegion
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: cluster-2
+            type: Private
+            zone: yourSubnetRegion
+      writeConnectionSecretToRef:
+        name: simple-xplane-kops
+        namespace: default

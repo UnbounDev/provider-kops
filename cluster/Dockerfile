@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.16 as builder
+FROM golang:1.22 as builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -20,6 +20,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o provider
 FROM alpine:3.7
 WORKDIR /
 COPY --from=builder /workspace/provider .
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt ./ca-certificates.crt
 COPY package /
 
 EXPOSE 8080
