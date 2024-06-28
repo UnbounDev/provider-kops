@@ -29,6 +29,8 @@ import (
 type ProviderConfigSpec struct {
 	// Credentials required to authenticate to this provider.
 	Credentials ProviderCredentials `json:"credentials"`
+	// PubSshKey is provided to the kops configurations on creation
+	PubSshKey ProviderCredentials `json:"pubSshKey"`
 }
 
 // ProviderCredentials required to authenticate.
@@ -47,7 +49,7 @@ type ProviderConfigStatus struct {
 
 // +kubebuilder:object:root=true
 
-// A ProviderConfig configures a Template provider.
+// A ProviderConfig configures a KOps provider.
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:printcolumn:name="SECRET-NAME",type="string",JSONPath=".spec.credentials.secretRef.name",priority=1

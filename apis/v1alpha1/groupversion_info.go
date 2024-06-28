@@ -14,24 +14,30 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1alpha1 contains the core resources of the Template provider.
+// Package v1alpha1 contains the core resources of the KOps provider.
 // +kubebuilder:object:generate=true
-// +groupName=template.crossplane.io
+// +groupName=kops.crossplane.io
 // +versionName=v1alpha1
 package v1alpha1
 
 import (
+	"reflect"
+
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
 
 // Package type metadata.
 const (
-	Group   = "template.crossplane.io"
+	Group   = "kops.crossplane.io"
 	Version = "v1alpha1"
 )
 
 var (
+	ClusterInstanceKind             = reflect.TypeOf(Cluster{}).Name()
+	ClusterInstanceKindApiVersion   = ClusterInstanceKind + "." + SchemeGroupVersion.Version
+	ClusterInstanceGroupVersionKind = SchemeGroupVersion.WithKind(ClusterInstanceKind)
+
 	// SchemeGroupVersion is group version used to register these objects
 	SchemeGroupVersion = schema.GroupVersion{Group: Group, Version: Version}
 

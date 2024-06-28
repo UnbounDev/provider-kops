@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.14.0
-  name: providerconfigs.template.crossplane.io
+  name: providerconfigs.kops.crossplane.io
 spec:
-  group: template.crossplane.io
+  group: kops.crossplane.io
   names:
     kind: ProviderConfig
     listKind: ProviderConfigList
@@ -25,7 +25,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: A ProviderConfig configures a Template provider.
+        description: A ProviderConfig configures a KOps provider.
         properties:
           apiVersion:
             description: |-
@@ -103,8 +103,65 @@ spec:
                 required:
                 - source
                 type: object
+              pubSshKey:
+                description: PubSshKey is provided to the kops configurations on creation
+                properties:
+                  env:
+                    description: |-
+                      Env is a reference to an environment variable that contains credentials
+                      that must be used to connect to the provider.
+                    properties:
+                      name:
+                        description: Name is the name of an environment variable.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  fs:
+                    description: |-
+                      Fs is a reference to a filesystem location that contains credentials that
+                      must be used to connect to the provider.
+                    properties:
+                      path:
+                        description: Path is a filesystem path.
+                        type: string
+                    required:
+                    - path
+                    type: object
+                  secretRef:
+                    description: |-
+                      A SecretRef is a reference to a secret key that contains the credentials
+                      that must be used to connect to the provider.
+                    properties:
+                      key:
+                        description: The key to select.
+                        type: string
+                      name:
+                        description: Name of the secret.
+                        type: string
+                      namespace:
+                        description: Namespace of the secret.
+                        type: string
+                    required:
+                    - key
+                    - name
+                    - namespace
+                    type: object
+                  source:
+                    description: Source of the provider credentials.
+                    enum:
+                    - None
+                    - Secret
+                    - InjectedIdentity
+                    - Environment
+                    - Filesystem
+                    type: string
+                required:
+                - source
+                type: object
             required:
             - credentials
+            - pubSshKey
             type: object
           status:
             description: A ProviderConfigStatus reflects the observed state of a ProviderConfig.
