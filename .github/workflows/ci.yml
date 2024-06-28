@@ -190,8 +190,15 @@ jobs:
           version: ${{ env.DOCKER_BUILDX_VERSION }}
           install: true
 
+      - name: Login to dockerhub
+        uses: docker/login-action@v3
+        if: vars.DOCKERHUB_USERNAME != ''
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Login to Upbound
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3
         if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
         with:
           registry: xpkg.upbound.io
@@ -244,6 +251,10 @@ jobs:
         with:
           name: output
           path: _output/**
+
+      - name: Publish Dockerhub Artifacts
+        if: vars.DOCKERHUB_USERNAME != ''
+        run: XPKG_REG_ORGS=docker.io/unboundev XPKG_REG_ORGS_NO_PROMOTE=docker.io/unboundev make publish BRANCH_NAME=${GITHUB_REF##*/}
 
       - name: Publish Artifacts
         if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
