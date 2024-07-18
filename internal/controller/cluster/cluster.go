@@ -58,6 +58,7 @@ const (
 	providerKopsCreatePending        = "provider-kops.io/external-create-pending"
 	providerKopsCreateComplete       = "provider-kops.io/external-create-complete"
 	providerKopsReconcilePending     = "provider-kops.io/external-reconcile-pending"
+	providerKopsRollingUpdatePending = "provider-kops.io/external-rolling-update-pending"
 	providerKopsTriggerUpdate        = "provider-kops.io/external-update-trigger"
 	providerKopsTriggerRollingUpdate = "provider-kops.io/external-rolling-update-trigger"
 	providerKopsUpdateLocked         = "provider-kops.io/external-update-locked"
@@ -367,7 +368,9 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		}
 
 		fmt.Println("UPDATE DONE")
-		c.unlockCluster(bgCtx, cr, []string{providerKopsUpdateLocked})
+		if err := c.unlockCluster(bgCtx, cr, []string{providerKopsUpdateLocked}); err != nil {
+			//TODO log err
+		}
 
 	}()
 

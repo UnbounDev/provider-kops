@@ -35,11 +35,27 @@ type ClusterParameters struct {
 
 	InstanceGroups []InstanceGroupSpec `json:"instanceGroups"`
 
+	RollingUpdateOpts RollingUpdateOptsSpec `json:"rollingUpdateOpts,omitempty"`
+
 	Secrets []SecretSpec `json:"secrets,omitempty"`
 
 	// Cluster is the spec provided for the kops api ClusterSpec; ref:
 	// https://pkg.go.dev/k8s.io/kops@v1.29.0/pkg/apis/kops#ClusterSpec
 	// Cluster api.ClusterSpec `json:"cluster"`
+}
+
+type RollingUpdateOptsSpec struct {
+	BastionInterval      *string `json:"bastionInterval,omitempty"`
+	CloudOnly            *bool   `json:"cloudOnly,omitempty"`
+	ControlPlaneInterval *string `json:"controlPlaneInterval,omitempty"`
+	DrainTimeout         *string `json:"drainTimeout,omitempty"`
+	FailOnDrainError     *bool   `json:"failOnDrainError,omitempty"`
+	FailOnValidateError  *bool   `json:"failOnValidateError,omitempty"`
+	Force                *bool   `json:"force,omitempty"`
+	NodeInterval         *string `json:"nodeInterval,omitempty"`
+	PostDrainDelay       *string `json:"postDrainDelay,omitempty"`
+	ValidateCount        *int32  `json:"validateCount,omitempty"`
+	ValidationTimeout    *string `json:"validationTimeout,omitempty"`
 }
 
 // *****
