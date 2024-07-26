@@ -4,6 +4,8 @@ ARG TARGETOS
 ARG TARGETARCH
 
 ADD bin/$TARGETOS\_$TARGETARCH/provider /usr/local/bin/crossplane-kops-provider
+ADD bin/kubectl /usr/local/bin/kubectl
+ADD bin/kops /usr/local/bin/kops
 
 USER 65532
 ENTRYPOINT ["crossplane-kops-provider"]
