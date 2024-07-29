@@ -10,11 +10,11 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/provider-kops/apis/v1alpha1"
 	apisv1alpha1 "github.com/crossplane/provider-kops/apis/v1alpha1"
 	"github.com/pkg/errors"
 	diff "github.com/r3labs/diff/v3"
-	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 
 	api "k8s.io/kops/pkg/apis/kops"
@@ -50,7 +50,7 @@ func (k *kopsClient) observeCluster(ctx context.Context, cr *apisv1alpha1.Cluste
 	return cluster, nil
 }
 
-func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) error {
+func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster, log logging.Logger) error {
 
 	fileSuffix := fileSuffixCreate
 
@@ -64,13 +64,16 @@ func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) erro
 	cmd := exec.Command(
 		"kops",
 		"create",
+		"-v5",
 		fmt.Sprintf("-f%s", getKopsClusterFilename(cr, fileSuffix)),
 		fmt.Sprintf("--name=%s", cr.Name),
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 	)
-	cmd.Env = append(cmd.Env, getKopsKubeconfigEnv(cr))
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
+	} else {
+		log.Debug(string(output))
 	}
 
 	// now create the pub ssh secret
@@ -78,14 +81,17 @@ func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) erro
 	cmd = exec.Command(
 		"kops",
 		"create",
+		"-v5",
 		"sshpublickey",
 		fmt.Sprintf("-i%s", getKopsClusterPubSshKeyFilename(cr, fileSuffix)),
 		fmt.Sprintf("--name=%s", cr.Name),
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 	)
-	cmd.Env = append(cmd.Env, getKopsKubeconfigEnv(cr))
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
+	} else {
+		log.Debug(string(output))
 	}
 
 	// now create all instance group configs
@@ -94,14 +100,17 @@ func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) erro
 		cmd := exec.Command(
 			"kops",
 			"create",
+			"-v5",
 			fmt.Sprintf("-f%s", getKopsInstanceGroupFilename(cr, &ig, fileSuffix)),
 			fmt.Sprintf("--name=%s", cr.Name),
 			fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 		)
-		cmd.Env = append(cmd.Env, getKopsKubeconfigEnv(cr))
+		cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return errors.Wrap(err, string(output))
+		} else {
+			log.Debug(string(output))
 		}
 
 	}
@@ -122,7 +131,7 @@ func (k *kopsClient) authenticateToCluster(ctx context.Context, cr *v1alpha1.Clu
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 	)
 	cmd.Args = append(cmd.Args, extraArgs...)
-	cmd.Env = append(cmd.Env, getKopsKubeconfigEnv(cr))
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
 	}
@@ -148,7 +157,7 @@ func (k *kopsClient) validateCluster(ctx context.Context, cr *v1alpha1.Cluster, 
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 	)
 	cmd.Args = append(cmd.Args, extraArgs...)
-	cmd.Env = append(cmd.Env, getKopsKubeconfigEnv(cr))
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 	cmd.Stdout = &stdOut
 	cmd.Stderr = &stdErr
 	err := cmd.Run()
@@ -168,7 +177,7 @@ func (k *kopsClient) validateCluster(ctx context.Context, cr *v1alpha1.Cluster, 
 		return res, err
 	} else {
 		if jsonError := json.Unmarshal(output, res); jsonError != nil {
-			return res, errors.Wrapf(jsonError, "error in json unmarshal for:%s; err string", string(output), errString)
+			return res, errors.Wrapf(jsonError, "error in json unmarshal for:%s; err string:%s", string(output), errString)
 		}
 		return res, nil
 	}
@@ -204,7 +213,7 @@ func (k *kopsClient) diffCluster(ctx context.Context, cr *v1alpha1.Cluster) ([]d
 		fmt.Sprintf("--name=%s", cr.Name),
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 	)
-	cmd.Env = append(cmd.Env, getKopsKubeconfigEnv(cr))
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 	cmd.Stdout = &stdOut
 	cmd.Stderr = &stdErr
 	if err := cmd.Run(); err != nil {
@@ -229,7 +238,7 @@ func (k *kopsClient) diffCluster(ctx context.Context, cr *v1alpha1.Cluster) ([]d
 			fmt.Sprintf("--name=%s", cr.Name),
 			fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 		)
-		cmd.Env = append(cmd.Env, getKopsKubeconfigEnv(cr))
+		cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 		cmd.Stdout = &stdOut
 		cmd.Stderr = &stdErr
 		if err := cmd.Run(); err != nil {
@@ -307,7 +316,7 @@ func (k *kopsClient) updateCluster(ctx context.Context, cr *v1alpha1.Cluster) er
 			fmt.Sprintf("--name=%s", cr.Name),
 			fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 		)
-		cmd.Env = append(cmd.Env, getKopsKubeconfigEnv(cr))
+		cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return errors.Wrap(err, string(output))
@@ -324,7 +333,7 @@ func (k *kopsClient) updateCluster(ctx context.Context, cr *v1alpha1.Cluster) er
 				fmt.Sprintf("--name=%s", cr.Name),
 				fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 			)
-			cmd.Env = append(cmd.Env, getKopsKubeconfigEnv(cr))
+			cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 
 			if output, err := cmd.CombinedOutput(); err != nil {
 				return errors.Wrap(err, string(output))
@@ -343,7 +352,7 @@ func (k *kopsClient) updateCluster(ctx context.Context, cr *v1alpha1.Cluster) er
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 		"--yes",
 	)
-	cmd.Env = append(cmd.Env, getKopsKubeconfigEnv(cr))
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
@@ -421,7 +430,7 @@ func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *v1alpha1.Clus
 		fmt.Sprintf("--validation-timeout=%s", *rollingUpdateOpts.ValidationTimeout),
 		"--yes",
 	)
-	cmd.Env = append(cmd.Env, getKopsKubeconfigEnv(cr))
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
@@ -435,39 +444,4 @@ type awsCredentials struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	SessionToken    string
-}
-
-// credentialsIDSecret retrieves AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from the data which contains
-// aws credentials under given profile
-// Example:
-// [default]
-// aws_access_key_id = <YOUR_ACCESS_KEY_ID>
-// aws_secret_access_key = <YOUR_SECRET_ACCESS_KEY>
-//
-// Attribution; almost entirely taken direct from:
-// https://github.com/crossplane-contrib/provider-aws/blob/d17c9dad7b6d8af7dfcbb225cfb3ffd1f5fa7f17/pkg/utils/connect/aws/config.go#L222-L255
-func credentialsIDSecret(data []byte, profile string) (awsCredentials, error) {
-	config, err := ini.InsensitiveLoad(data)
-	if err != nil {
-		return awsCredentials{}, errors.Wrap(err, "cannot parse credentials secret")
-	}
-
-	iniProfile, err := config.GetSection(profile)
-	if err != nil {
-		return awsCredentials{}, errors.Wrap(err, fmt.Sprintf("cannot get %s profile in credentials secret", profile))
-	}
-
-	accessKeyID := iniProfile.Key("aws_access_key_id")
-	secretAccessKey := iniProfile.Key("aws_secret_access_key")
-	sessionToken := iniProfile.Key("aws_session_token")
-
-	if accessKeyID == nil || secretAccessKey == nil || sessionToken == nil {
-		return awsCredentials{}, errors.New("returned key can be empty but cannot be nil")
-	}
-
-	return awsCredentials{
-		AccessKeyID:     accessKeyID.Value(),
-		SecretAccessKey: secretAccessKey.Value(),
-		SessionToken:    sessionToken.Value(),
-	}, nil
 }

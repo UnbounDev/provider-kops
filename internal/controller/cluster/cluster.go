@@ -33,6 +33,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/connection"
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/pkg/event"
+	"github.com/crossplane/crossplane-runtime/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
@@ -65,6 +66,8 @@ const (
 )
 
 var (
+	log logging.Logger
+
 	newKopsClientService = func(creds []byte, pubSshKey []byte) (*kopsClient, error) {
 		awsCredentials, err := credentialsIDSecret(creds, "default")
 		if err != nil {
@@ -99,6 +102,7 @@ var (
 // Setup adds a controller that reconciles Cluster managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(v1alpha1.ClusterGroupKind)
+	log = o.Logger
 
 	cps := []managed.ConnectionPublisher{managed.NewAPISecretPublisher(mgr.GetClient(), mgr.GetScheme())}
 	if o.Features.Enabled(features.EnableAlphaExternalSecretStores) {
@@ -209,7 +213,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	cluster, err := c.service.observeCluster(ctx, cr)
 	if err != nil {
-		fmt.Printf("\n404::%+v\n", err.Error())
+		log.Debug(fmt.Sprintf("cluster not found: %s", err.Error()))
 		if strings.Contains(err.Error(), "not found") {
 			// ignore "not found" errors to allow creation of the cluster
 			// TODO: change to identify deletion case
@@ -270,14 +274,14 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 				// set status to prompt update
 				cr.Status.Status = apisv1alpha1.Updating
 				if changelogjson, err := json.Marshal(changelog); err == nil {
-					fmt.Printf("\nchangelog:%s\n", string(changelogjson))
+					log.Debug(fmt.Sprintf("Change detected: %s", string(changelogjson)))
 				}
 			}
 			// TODO(ab): check annotations for trigger to perform update
 			// TODO(ab): check annotations for trigger to perform rolling-update
 		}
 		if err != nil {
-			fmt.Printf("\nOBSERVE ERROR%+v\n:: %+v\n", err.Error(), output)
+			log.Info(fmt.Sprintf("WARNING OBSERVER ERROR: %s; %s", err.Error(), output))
 		}
 	}
 
@@ -317,27 +321,31 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	if _, ok := cr.Annotations[crossplaneCreateSucceeded]; ok {
-		fmt.Printf("Already Creating: %s", cr.Name)
+		log.Debug(fmt.Sprintf("Already creating: %s", cr.Name))
 		return managed.ExternalCreation{}, nil
 	}
+	log.Info(fmt.Sprintf("Begin creating: %s", cr.Name))
+	log.Debug(fmt.Sprintf("%+v", cr))
 
-	// fmt.Printf("Creating: %+v", cr)
-
-	err := c.service.createCluster(ctx, cr)
+	if err := c.service.createCluster(ctx, cr, log); err != nil {
+		log.Info(fmt.Sprintf("Cluster creation failed for: %s; %s; %+v", cr.Name, err.Error(), err))
+		log.Info(fmt.Sprintf("Remove the %s and %s annotations if you would like the controller to retry creation", providerKopsCreatePending, providerKopsUpdateLocked))
+		return managed.ExternalCreation{}, err
+	}
 
 	if err := c.annotateCluster(ctx, cr, map[string]string{providerKopsCreateComplete: ""}); err != nil {
-		// TODO print error
+		log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
 	}
 	// naive attempt to unlock cluster
 	if err := c.unlockCluster(ctx, cr, []string{providerKopsCreatePending, providerKopsUpdateLocked}); err != nil {
-		// TODO print error
+		log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
 	}
 
 	return managed.ExternalCreation{
 		// Optionally return any details that may be required to connect to the
 		// external resource. These will be stored as the connection secret.
 		ConnectionDetails: managed.ConnectionDetails{},
-	}, err
+	}, nil
 }
 
 func (c *external) getCluster(ctx context.Context, cr *v1alpha1.Cluster) (*v1alpha1.Cluster, error) {
@@ -358,18 +366,18 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalUpdate{}, errors.New(errNotCluster)
 	}
 
-	// fmt.Printf("Updating: %+v", cr)
+	log.Info(fmt.Sprintf("Updating: %+v", cr.Name))
 
 	// don't block when updating the cluster, this takes a while..
 	go func() {
 		bgCtx := context.Background()
 		if err := c.service.updateCluster(bgCtx, cr); err != nil {
-			fmt.Printf("\nUPDATE ERR: %+v\n", err)
+			log.Info(fmt.Sprintf("UPDATE ERROR: %s; %+v", err.Error(), err))
 		}
 
 		fmt.Println("UPDATE DONE")
 		if err := c.unlockCluster(bgCtx, cr, []string{providerKopsUpdateLocked}); err != nil {
-			//TODO log err
+			log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
 		}
 
 	}()
@@ -387,7 +395,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) error {
 		return errors.New(errNotCluster)
 	}
 
-	fmt.Printf("Deleting: %+v", cr)
+	log.Info(fmt.Sprintf("Deleting: %s", cr.Name))
 
 	meta.RemoveFinalizer(cr, finalizer)
 	if err := c.kube.Update(ctx, cr); err != nil {

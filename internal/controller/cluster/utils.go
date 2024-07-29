@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	apisv1alpha1 "github.com/crossplane/provider-kops/apis/v1alpha1"
+	"github.com/pkg/errors"
+	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 )
 
@@ -133,8 +135,28 @@ func buildKopsYamlStructs(cr *apisv1alpha1.Cluster) (clusterYaml, []instanceGrou
 	return clusterYaml, instanceGroupYamls, nil
 }
 
-func getKopsKubeconfigEnv(cr *apisv1alpha1.Cluster) string {
-	return fmt.Sprintf("KUBECONFIG=/tmp/%s_kubeconfig", strings.ReplaceAll(cr.Name, ".", "-"))
+func getKopsCliEnv(cr *apisv1alpha1.Cluster, client *kopsClient) []string {
+	env := []string{}
+
+	kubeConfig := fmt.Sprintf("KUBECONFIG=/tmp/%s_kubeconfig", strings.ReplaceAll(cr.Name, ".", "-"))
+	env = append(env, kubeConfig)
+
+	awsAccessKeyID := fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", client.awsCredentials.AccessKeyID)
+	if client.awsCredentials.AccessKeyID != "" {
+		env = append(env, awsAccessKeyID)
+	}
+
+	awsSecretAccessKey := fmt.Sprintf("AWS_SECRET_ACCESS_KEY=%s", client.awsCredentials.SecretAccessKey)
+	if client.awsCredentials.SecretAccessKey != "" {
+		env = append(env, awsSecretAccessKey)
+	}
+
+	awsSessionToken := fmt.Sprintf("AWS_SESSION_TOKEN=%s", client.awsCredentials.SessionToken)
+	if client.awsCredentials.SessionToken != "" {
+		env = append(env, awsSessionToken)
+	}
+
+	return env
 }
 
 func getKopsClusterFilename(cr *apisv1alpha1.Cluster, fileSuffix string) string {
@@ -233,4 +255,39 @@ func writeKopsYamlFile(cr *apisv1alpha1.Cluster, pubSshKey string, fileSuffix st
 	}
 
 	return nil
+}
+
+// credentialsIDSecret retrieves AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY from the data which contains
+// aws credentials under given profile
+// Example:
+// [default]
+// aws_access_key_id = <YOUR_ACCESS_KEY_ID>
+// aws_secret_access_key = <YOUR_SECRET_ACCESS_KEY>
+//
+// Attribution; almost entirely taken direct from:
+// https://github.com/crossplane-contrib/provider-aws/blob/d17c9dad7b6d8af7dfcbb225cfb3ffd1f5fa7f17/pkg/utils/connect/aws/config.go#L222-L255
+func credentialsIDSecret(data []byte, profile string) (awsCredentials, error) {
+	config, err := ini.InsensitiveLoad(data)
+	if err != nil {
+		return awsCredentials{}, errors.Wrap(err, "cannot parse credentials secret")
+	}
+
+	iniProfile, err := config.GetSection(profile)
+	if err != nil {
+		return awsCredentials{}, errors.Wrap(err, fmt.Sprintf("cannot get %s profile in credentials secret", profile))
+	}
+
+	accessKeyID := iniProfile.Key("aws_access_key_id")
+	secretAccessKey := iniProfile.Key("aws_secret_access_key")
+	sessionToken := iniProfile.Key("aws_session_token")
+
+	if accessKeyID == nil || secretAccessKey == nil || sessionToken == nil {
+		return awsCredentials{}, errors.New("returned key can be empty but cannot be nil")
+	}
+
+	return awsCredentials{
+		AccessKeyID:     accessKeyID.Value(),
+		SecretAccessKey: secretAccessKey.Value(),
+		SessionToken:    sessionToken.Value(),
+	}, nil
 }

@@ -9,3 +9,4 @@ cover.out
 .DS_Store
 **/aws-credentials.txt
 **/id_ed25519*
+**/*.xpkg
