@@ -71,9 +71,17 @@ type metadataInstanceGroupSpec struct {
 	Labels map[string]string `yaml:"labels,omitempty"`
 }
 
+func getClusterExternalName(cr *apisv1alpha1.Cluster) string {
+	if externalName, ok := cr.Annotations[crossplaneExternalName]; ok {
+		return externalName
+	} else {
+		return cr.Name
+	}
+}
+
 func modifyClusterYaml(cr *apisv1alpha1.Cluster, cy *clusterYaml) {
 
-	cy.Spec.ConfigBase = filepath.Join(cr.Spec.ForProvider.State, cr.Name)
+	cy.Spec.ConfigBase = filepath.Join(cr.Spec.ForProvider.State, getClusterExternalName(cr))
 	// when the state is in s3 the filepath.Join function messes up the s3 prefix via the s3://->s3:/ modification,
 	// we want to keep the convenience of using filepath.Join, so this line is just a patch for the case where
 	// ConfigBase is housed in s3
@@ -92,14 +100,14 @@ func modifyInstanceGroupYaml(cr *apisv1alpha1.Cluster, ig *apisv1alpha1.Instance
 	if reflect.ValueOf(igy.Spec.NodeLabels).IsNil() {
 		igy.Spec.NodeLabels = make(map[string]string)
 	}
-	igy.Metadata.Labels["kops.k8s.io/cluster"] = cr.Name
+	igy.Metadata.Labels["kops.k8s.io/cluster"] = getClusterExternalName(cr)
 	igy.Spec.NodeLabels["kops.k8s.io/instancegroup"] = ig.Name
 
 	if cr.Spec.ForProvider.Cluster.ClusterAutoscaler.Enabled && ig.Spec.Role != apisv1alpha1.InstanceGroupRoleControlPlane {
 		igy.Spec.CloudLabels["k8s.io/cluster-autoscaler/enabled"] = ""
 		igy.Spec.CloudLabels["k8s.io/cluster-autoscaler/node-template/label"] = ""
-		igy.Spec.CloudLabels[fmt.Sprintf("k8s.io/cluster-autoscaler/%s", cr.Name)] = ""
-		igy.Spec.NodeLabels["autoscaling.k8s.io/nodegroup"] = fmt.Sprintf("%s.%s", ig.Name, cr.Name)
+		igy.Spec.CloudLabels[fmt.Sprintf("k8s.io/cluster-autoscaler/%s", getClusterExternalName(cr))] = ""
+		igy.Spec.NodeLabels["autoscaling.k8s.io/nodegroup"] = fmt.Sprintf("%s.%s", ig.Name, getClusterExternalName(cr))
 	}
 }
 
@@ -109,7 +117,7 @@ func buildKopsYamlStructs(cr *apisv1alpha1.Cluster) (clusterYaml, []instanceGrou
 		ApiVersion: "kops.k8s.io/v1alpha2",
 		Kind:       "Cluster",
 		Metadata: apisv1alpha1.MetadataClusterSpec{
-			Name: cr.Name,
+			Name: getClusterExternalName(cr),
 		},
 		Spec: cr.Spec.ForProvider.Cluster,
 	}
@@ -138,7 +146,7 @@ func buildKopsYamlStructs(cr *apisv1alpha1.Cluster) (clusterYaml, []instanceGrou
 func getKopsCliEnv(cr *apisv1alpha1.Cluster, client *kopsClient) []string {
 	env := []string{}
 
-	kubeConfig := fmt.Sprintf("KUBECONFIG=/tmp/%s_kubeconfig", strings.ReplaceAll(cr.Name, ".", "-"))
+	kubeConfig := fmt.Sprintf("KUBECONFIG=/tmp/%s_kubeconfig", strings.ReplaceAll(getClusterExternalName(cr), ".", "-"))
 	env = append(env, kubeConfig)
 
 	awsAccessKeyID := fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", client.awsCredentials.AccessKeyID)
@@ -160,16 +168,16 @@ func getKopsCliEnv(cr *apisv1alpha1.Cluster, client *kopsClient) []string {
 }
 
 func getKopsClusterFilename(cr *apisv1alpha1.Cluster, fileSuffix string) string {
-	return fmt.Sprintf("/tmp/%s_%s.yaml", strings.ReplaceAll(cr.Name, ".", "-"), fileSuffix)
+	return fmt.Sprintf("/tmp/%s_%s.yaml", strings.ReplaceAll(getClusterExternalName(cr), ".", "-"), fileSuffix)
 }
 
 func getKopsClusterPubSshKeyFilename(cr *apisv1alpha1.Cluster, fileSuffix string) string {
-	return fmt.Sprintf("/tmp/%s_%s.pub", strings.ReplaceAll(cr.Name, ".", "-"), fileSuffix)
+	return fmt.Sprintf("/tmp/%s_%s.pub", strings.ReplaceAll(getClusterExternalName(cr), ".", "-"), fileSuffix)
 }
 
 func getKopsInstanceGroupFilename(cr *apisv1alpha1.Cluster, ig *apisv1alpha1.InstanceGroupSpec, fileSuffix string) string {
 	return fmt.Sprintf("/tmp/%s_%s_%s.yaml",
-		strings.ReplaceAll(cr.Name, ".", "-"),
+		strings.ReplaceAll(getClusterExternalName(cr), ".", "-"),
 		strings.ReplaceAll(ig.Name, ".", "-"),
 		fileSuffix,
 	)
@@ -290,4 +298,10 @@ func credentialsIDSecret(data []byte, profile string) (awsCredentials, error) {
 		SecretAccessKey: secretAccessKey.Value(),
 		SessionToken:    sessionToken.Value(),
 	}, nil
+}
+
+type awsCredentials struct {
+	AccessKeyID     string
+	SecretAccessKey string
+	SessionToken    string
 }

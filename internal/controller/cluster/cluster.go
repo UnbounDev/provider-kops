@@ -55,6 +55,7 @@ const (
 	finalizer = "finalizer.managedresource.crossplane.io"
 
 	crossplaneCreateSucceeded = "crossplane.io/external-create-succeeded"
+	crossplaneExternalName    = "crossplane.io/external-name"
 
 	providerKopsCreatePending        = "provider-kops.io/external-create-pending"
 	providerKopsCreateComplete       = "provider-kops.io/external-create-complete"
@@ -287,9 +288,6 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	switch cr.Status.Status {
 	case apisv1alpha1.Creating:
-		if err := c.lockCluster(ctx, cr, []string{providerKopsCreatePending, providerKopsUpdateLocked}); err != nil {
-			return mo, err
-		}
 		mo.ResourceExists = false
 		cr.SetConditions(xpv1.Creating())
 	case apisv1alpha1.Deleting:
@@ -299,9 +297,6 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		mo.ResourceExists = true
 		cr.SetConditions(xpv1.Available())
 	case apisv1alpha1.Updating:
-		if err := c.lockCluster(ctx, cr, []string{providerKopsUpdateLocked}); err != nil {
-			return mo, err
-		}
 		mo.ResourceExists = true
 		mo.ResourceUpToDate = false
 		// NB! We set the status to `Unavailable` bc the cluster is not
@@ -324,22 +319,33 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		log.Debug(fmt.Sprintf("Already creating: %s", cr.Name))
 		return managed.ExternalCreation{}, nil
 	}
-	log.Info(fmt.Sprintf("Begin creating: %s", cr.Name))
-	log.Debug(fmt.Sprintf("%+v", cr))
-
-	if err := c.service.createCluster(ctx, cr, log); err != nil {
-		log.Info(fmt.Sprintf("Cluster creation failed for: %s; %s; %+v", cr.Name, err.Error(), err))
-		log.Info(fmt.Sprintf("Remove the %s and %s annotations if you would like the controller to retry creation", providerKopsCreatePending, providerKopsUpdateLocked))
+	if err := c.lockCluster(ctx, cr, []string{providerKopsCreatePending, providerKopsUpdateLocked}); err != nil {
 		return managed.ExternalCreation{}, err
 	}
 
-	if err := c.annotateCluster(ctx, cr, map[string]string{providerKopsCreateComplete: ""}); err != nil {
-		log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
-	}
-	// naive attempt to unlock cluster
-	if err := c.unlockCluster(ctx, cr, []string{providerKopsCreatePending, providerKopsUpdateLocked}); err != nil {
-		log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
-	}
+	log.Info(fmt.Sprintf("Begin creating: %s", cr.Name))
+	log.Debug(fmt.Sprintf("%+v", cr))
+
+	// don't block when updating the cluster, this takes a while..
+	go func() {
+		bgCtx := context.Background()
+		if err := c.service.createCluster(bgCtx, cr); err != nil {
+			log.Info(fmt.Sprintf("Cluster creation failed for: %s; %s; %+v", cr.Name, err.Error(), err))
+			log.Info(fmt.Sprintf("Remove the %s and %s annotations if you would like the controller to retry creation", providerKopsCreatePending, providerKopsUpdateLocked))
+		}
+
+		if err := c.service.updateCluster(bgCtx, cr); err != nil {
+			log.Info(fmt.Sprintf("Post create update error: %s; %+v", err.Error(), err))
+		}
+
+		if err := c.annotateCluster(ctx, cr, map[string]string{providerKopsCreateComplete: ""}); err != nil {
+			log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
+		}
+		// naive attempt to unlock cluster
+		if err := c.unlockCluster(ctx, cr, []string{providerKopsCreatePending, providerKopsUpdateLocked}); err != nil {
+			log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
+		}
+	}()
 
 	return managed.ExternalCreation{
 		// Optionally return any details that may be required to connect to the
@@ -366,7 +372,17 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalUpdate{}, errors.New(errNotCluster)
 	}
 
-	log.Info(fmt.Sprintf("Updating: %+v", cr.Name))
+	_, resourceLocked := cr.Annotations[providerKopsUpdateLocked]
+	if resourceLocked {
+		log.Debug(fmt.Sprintf("Already updating %s", cr.Name))
+		return managed.ExternalUpdate{}, nil
+	}
+
+	if err := c.lockCluster(ctx, cr, []string{providerKopsUpdateLocked}); err != nil {
+		return managed.ExternalUpdate{}, err
+	}
+
+	log.Info(fmt.Sprintf("Begin updating: %+v", cr.Name))
 
 	// don't block when updating the cluster, this takes a while..
 	go func() {
@@ -375,11 +391,11 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 			log.Info(fmt.Sprintf("UPDATE ERROR: %s; %+v", err.Error(), err))
 		}
 
-		fmt.Println("UPDATE DONE")
 		if err := c.unlockCluster(bgCtx, cr, []string{providerKopsUpdateLocked}); err != nil {
-			log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
+			log.Info(fmt.Sprintf("WARNING: %s; %+v", err.Error(), err))
 		}
 
+		log.Info(fmt.Sprintf("Update complete for %s", cr.Name))
 	}()
 
 	return managed.ExternalUpdate{
