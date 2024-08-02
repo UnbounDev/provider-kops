@@ -338,11 +338,11 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 			log.Info(fmt.Sprintf("Post create update error: %s; %+v", err.Error(), err))
 		}
 
-		if err := c.annotateCluster(ctx, cr, map[string]string{providerKopsCreateComplete: ""}); err != nil {
+		if err := c.annotateCluster(bgCtx, cr, map[string]string{providerKopsCreateComplete: ""}); err != nil {
 			log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
 		}
 		// naive attempt to unlock cluster
-		if err := c.unlockCluster(ctx, cr, []string{providerKopsCreatePending, providerKopsUpdateLocked}); err != nil {
+		if err := c.unlockCluster(bgCtx, cr, []string{providerKopsCreatePending, providerKopsUpdateLocked}); err != nil {
 			log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
 		}
 	}()
