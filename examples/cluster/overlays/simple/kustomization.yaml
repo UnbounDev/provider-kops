@@ -1,6 +1,8 @@
 
 kind: Kustomization
 
+namePrefix: simple-
+
 resources:
 - ./../../base
 
@@ -21,7 +23,7 @@ patches:
       # name not used; ref https://kubectl.docs.kubernetes.io/references/kustomize/kustomization/patches/#patch-using-inline-strategic-merge
       name: not-used
       labels:
-        kops: xplane-kops-simple
+        kops: xplane-kops
     spec:
       forProvider:
         state: s3://your-bucket
@@ -60,3 +62,6 @@ patches:
             name: cluster-2
             type: Private
             zone: yourSubnetRegion
+      writeConnectionSecretToRef:
+        name: simple-xplane-kops
+        namespace: default

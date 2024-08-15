@@ -143,10 +143,14 @@ func buildKopsYamlStructs(cr *apisv1alpha1.Cluster) (clusterYaml, []instanceGrou
 	return clusterYaml, instanceGroupYamls, nil
 }
 
+func getKubeConfigFilePath(cr *apisv1alpha1.Cluster) string {
+	return fmt.Sprintf("/tmp/%s_kubeconfig", strings.ReplaceAll(getClusterExternalName(cr), ".", "-"))
+}
+
 func getKopsCliEnv(cr *apisv1alpha1.Cluster, client *kopsClient) []string {
 	env := []string{}
 
-	kubeConfig := fmt.Sprintf("KUBECONFIG=/tmp/%s_kubeconfig", strings.ReplaceAll(getClusterExternalName(cr), ".", "-"))
+	kubeConfig := fmt.Sprintf("KUBECONFIG=%s", getKubeConfigFilePath(cr))
 	env = append(env, kubeConfig)
 
 	awsAccessKeyID := fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", client.awsCredentials.AccessKeyID)

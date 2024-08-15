@@ -347,10 +347,14 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		}
 	}()
 
+	connDetails := managed.ConnectionDetails{
+		"kubeconfig": []byte{},
+	}
+
 	return managed.ExternalCreation{
 		// Optionally return any details that may be required to connect to the
 		// external resource. These will be stored as the connection secret.
-		ConnectionDetails: managed.ConnectionDetails{},
+		ConnectionDetails: connDetails,
 	}, nil
 }
 
@@ -398,10 +402,18 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		log.Info(fmt.Sprintf("Update complete for %s", cr.Name))
 	}()
 
+	b, err := os.ReadFile(getKubeConfigFilePath(cr))
+	if err != nil {
+		log.Info(fmt.Sprintf("WARNING: kubeconfig file not found at '%s'", getKubeConfigFilePath(cr)))
+	}
+	connDetails := managed.ConnectionDetails{
+		"kubeconfig": b,
+	}
+
 	return managed.ExternalUpdate{
 		// Optionally return any details that may be required to connect to the
 		// external resource. These will be stored as the connection secret.
-		ConnectionDetails: managed.ConnectionDetails{},
+		ConnectionDetails: connDetails,
 	}, nil
 }
 
