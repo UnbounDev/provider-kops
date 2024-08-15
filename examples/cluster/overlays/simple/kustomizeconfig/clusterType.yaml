@@ -1,0 +1,4 @@
+
+images:
+- kind: Cluster
+  path: spec/forProvider/instanceGroups/spec/image

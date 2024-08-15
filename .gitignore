@@ -10,3 +10,4 @@ cover.out
 **/aws-credentials.txt
 **/id_ed25519*
 **/*.xpkg
+examples/**/private-*/
