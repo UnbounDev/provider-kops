@@ -37,6 +37,8 @@ type ClusterParameters struct {
 
 	RollingUpdateOpts RollingUpdateOptsSpec `json:"rollingUpdateOpts,omitempty"`
 
+	Keypairs []KeypairSpec `json:"keypairs,omitempty"`
+
 	Secrets []SecretSpec `json:"secrets,omitempty"`
 
 	// Cluster is the spec provided for the kops api ClusterSpec; ref:
@@ -45,17 +47,28 @@ type ClusterParameters struct {
 }
 
 type RollingUpdateOptsSpec struct {
-	BastionInterval      *string `json:"bastionInterval,omitempty"`
-	CloudOnly            *bool   `json:"cloudOnly,omitempty"`
+	// +kubebuilder:default="15s"
+	BastionInterval *string `json:"bastionInterval,omitempty"`
+	// +kubebuilder:default=false
+	CloudOnly *bool `json:"cloudOnly,omitempty"`
+	// +kubebuilder:default="15s"
 	ControlPlaneInterval *string `json:"controlPlaneInterval,omitempty"`
-	DrainTimeout         *string `json:"drainTimeout,omitempty"`
-	FailOnDrainError     *bool   `json:"failOnDrainError,omitempty"`
-	FailOnValidateError  *bool   `json:"failOnValidateError,omitempty"`
-	Force                *bool   `json:"force,omitempty"`
-	NodeInterval         *string `json:"nodeInterval,omitempty"`
-	PostDrainDelay       *string `json:"postDrainDelay,omitempty"`
-	ValidateCount        *int32  `json:"validateCount,omitempty"`
-	ValidationTimeout    *string `json:"validationTimeout,omitempty"`
+	// +kubebuilder:default="15m0s"
+	DrainTimeout *string `json:"drainTimeout,omitempty"`
+	// +kubebuilder:default=true
+	FailOnDrainError *bool `json:"failOnDrainError,omitempty"`
+	// +kubebuilder:default=true
+	FailOnValidateError *bool `json:"failOnValidateError,omitempty"`
+	// +kubebuilder:default=false
+	Force *bool `json:"force,omitempty"`
+	// +kubebuilder:default="15s"
+	NodeInterval *string `json:"nodeInterval,omitempty"`
+	// +kubebuilder:default="15s"
+	PostDrainDelay *string `json:"postDrainDelay,omitempty"`
+	// +kubebuilder:default=2
+	ValidateCount *int32 `json:"validateCount,omitempty"`
+	// +kubebuilder:default="15m0s"
+	ValidationTimeout *string `json:"validationTimeout,omitempty"`
 }
 
 // *****
@@ -160,10 +173,12 @@ const (
 )
 
 type FileAssetSpec struct {
-	Content string                 `yaml:"content" json:"content"`
-	Name    string                 `yaml:"name"    json:"name"`
-	Path    string                 `yaml:"path"    json:"path"`
-	Roles   []ClusterFileAssetRole `yaml:"roles"   json:"roles"`
+	Content string `yaml:"content" json:"content"`
+	// +kubebuilder:default="0440"
+	Mode  string                 `yaml:"mode" json:"mode"`
+	Name  string                 `yaml:"name"    json:"name"`
+	Path  string                 `yaml:"path"    json:"path"`
+	Roles []ClusterFileAssetRole `yaml:"roles"   json:"roles"`
 }
 
 // +kubebuilder:validation:Enum=Master;Node
@@ -210,19 +225,21 @@ type IAMSpec struct {
 }
 
 type KubeAPIServerSpec struct {
-	APIAudiences             []string `yaml:"apiAudiences,omitempty"   json:"apiAudiences,omitempty"`
-	DisableBasicAuth         bool     `yaml:"disableBasicAuth"         json:"disableBasicAuth"`
-	OidcClientID             string   `yaml:"oidcClientID"             json:"oidcClientID"`
-	OidcGroupsClaim          string   `yaml:"oidcGroupsClaim"          json:"oidcGroupsClaim"`
-	OidcIssuerURL            string   `yaml:"oidcIssuerURL"            json:"oidcIssuerURL"`
-	OidcUsernameClaim        string   `yaml:"oidcUsernameClaim"        json:"oidcUsernameClaim"`
-	AuditLogMaxAge           int      `yaml:"auditLogMaxAge"           json:"auditLogMaxAge"`
-	AuditLogMaxBackups       int      `yaml:"auditLogMaxBackups"       json:"auditLogMaxBackups"`
-	AuditLogMaxSize          int      `yaml:"auditLogMaxSize"          json:"auditLogMaxSize"`
-	AuditLogPath             string   `yaml:"auditLogPath"             json:"auditLogPath"`
-	AuditPolicyFile          string   `yaml:"auditPolicyFile"          json:"auditPolicyFile"`
-	AuditWebhookBatchMaxWait string   `yaml:"auditWebhookBatchMaxWait" json:"auditWebhookBatchMaxWait"`
-	AuditWebhookConfigFile   string   `yaml:"auditWebhookConfigFile"   json:"auditWebhookConfigFile"`
+	APIAudiences []string `yaml:"apiAudiences,omitempty"   json:"apiAudiences,omitempty"`
+	// +kubebuilder:default=/srv/kubernetes/ca.crt
+	ClientCAFile             string `yaml:"clientCAFile"             json:"clientCAFile"`
+	DisableBasicAuth         bool   `yaml:"disableBasicAuth"         json:"disableBasicAuth"`
+	OidcClientID             string `yaml:"oidcClientID"             json:"oidcClientID"`
+	OidcGroupsClaim          string `yaml:"oidcGroupsClaim"          json:"oidcGroupsClaim"`
+	OidcIssuerURL            string `yaml:"oidcIssuerURL"            json:"oidcIssuerURL"`
+	OidcUsernameClaim        string `yaml:"oidcUsernameClaim"        json:"oidcUsernameClaim"`
+	AuditLogMaxAge           int    `yaml:"auditLogMaxAge"           json:"auditLogMaxAge"`
+	AuditLogMaxBackups       int    `yaml:"auditLogMaxBackups"       json:"auditLogMaxBackups"`
+	AuditLogMaxSize          int    `yaml:"auditLogMaxSize"          json:"auditLogMaxSize"`
+	AuditLogPath             string `yaml:"auditLogPath"             json:"auditLogPath"`
+	AuditPolicyFile          string `yaml:"auditPolicyFile"          json:"auditPolicyFile"`
+	AuditWebhookBatchMaxWait string `yaml:"auditWebhookBatchMaxWait" json:"auditWebhookBatchMaxWait"`
+	AuditWebhookConfigFile   string `yaml:"auditWebhookConfigFile"   json:"auditWebhookConfigFile"`
 }
 
 type KubeletConfigSpec struct {
@@ -319,6 +336,21 @@ const (
 
 // *****
 // ***** END KopsClusterSpec and related *****
+// *****
+
+// *****
+// ***** BEGIN KeypairSpec and related *****
+// *****
+
+type KeypairSpec struct {
+	Keypair string      `yaml:"keypair" json:"keypair"`
+	Cert    *string     `yaml:"cert,omitempty" json:"cert,omitempty"`
+	Key     *SecretSpec `yaml:"key,omitempty" json:"key,omitempty"`
+	Primary bool        `yaml:"primary" json:"primary"`
+}
+
+// *****
+// ***** END KeypairSpec and related *****
 // *****
 
 // *****

@@ -4,7 +4,7 @@ kind: Kustomization
 namePrefix: simple-
 
 resources:
-- ./../../base
+- ./../../base-simple
 
 configurations:
 - kustomizeconfig/clusterType.yaml

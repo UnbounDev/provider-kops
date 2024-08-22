@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -112,6 +113,57 @@ func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) erro
 			log.Debug(string(output))
 		}
 
+	}
+
+	return nil
+}
+
+func (k *kopsClient) createKeypair(_ context.Context, cr *v1alpha1.Cluster, kp *v1alpha1.KeypairSpec, privateKeyData []byte) error {
+	args := []string{}
+	if kp.Primary {
+		args = append(args, "--primary=true")
+	}
+	if kp.Cert != nil {
+		f, err := os.CreateTemp(tmpDir, "*.crt")
+		if err != nil {
+			return err
+		}
+		_, err = f.Write([]byte(*kp.Cert))
+		if err != nil {
+			return err
+		}
+		args = append(args, fmt.Sprintf("--cert=%s", f.Name()))
+		defer os.Remove(f.Name())
+	}
+	if len(privateKeyData) > 0 {
+		f, err := os.CreateTemp(tmpDir, "*.pem")
+		if err != nil {
+			return err
+		}
+		_, err = f.Write(privateKeyData)
+		if err != nil {
+			return err
+		}
+		args = append(args, fmt.Sprintf("--key=%s", f.Name()))
+		defer os.Remove(f.Name())
+	}
+	//nolint:gosec
+	cmd := exec.Command(
+		"kops",
+		"create",
+		"keypair",
+		"-v5",
+		kp.Keypair,
+		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
+		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
+	)
+	cmd.Args = append(cmd.Args, args...)
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return errors.Wrap(err, string(output))
+	} else {
+		log.Debug(string(output))
 	}
 
 	return nil
@@ -369,7 +421,7 @@ func (k *kopsClient) updateCluster(ctx context.Context, cr *v1alpha1.Cluster) er
 		log.Debug(fmt.Sprintf("Applied Update:%s", string(output)))
 	}
 
-	return k.rollingUpdateCluster(ctx, cr)
+	return nil
 }
 
 func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *v1alpha1.Cluster) error {

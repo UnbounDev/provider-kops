@@ -338,6 +338,33 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 			log.Info(fmt.Sprintf("Post create update error: %s; %+v", err.Error(), err))
 		}
 
+		// TODO(ab): we need to provide lifecycle management for keypairs, rather
+		// than only providing bootstrap creation
+		for _, kp := range cr.Spec.ForProvider.Keypairs {
+			privateKeyData := []byte{}
+			if kp.Key != nil {
+				privateKeySource, err := resource.CommonCredentialExtractor(bgCtx, kp.Key.Value.Source, c.kube, kp.Key.Value.CommonCredentialSelectors)
+				privateKeyData = append(privateKeyData, privateKeySource...)
+				if err != nil {
+					log.Info(fmt.Sprintf("Post create keypair error: %s; %+v", err.Error(), err))
+				}
+			}
+			if err := c.service.createKeypair(bgCtx, cr, &kp, privateKeyData); err != nil {
+				log.Info(fmt.Sprintf("Post create keypair error: %s; %+v", err.Error(), err))
+			}
+		}
+		if len(cr.Spec.ForProvider.Keypairs) > 0 {
+			if err := c.service.updateCluster(bgCtx, cr); err != nil {
+				log.Info(fmt.Sprintf("POST CREATE UPDATE ERROR: %s; %+v", err.Error(), err))
+			}
+			// force cloudonly roll for initial cluster creation when keypairs are introduced
+			truePtr := bool(true)
+			cr.Spec.ForProvider.RollingUpdateOpts.CloudOnly = &truePtr
+			if err := c.service.rollingUpdateCluster(bgCtx, cr); err != nil {
+				log.Info(fmt.Sprintf("POST CREATE ROLLING UPDATE ERROR: %s; %+v", err.Error(), err))
+			}
+		}
+
 		if err := c.annotateCluster(bgCtx, cr, map[string]string{providerKopsCreateComplete: ""}); err != nil {
 			log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
 		}
@@ -393,6 +420,10 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		bgCtx := context.Background()
 		if err := c.service.updateCluster(bgCtx, cr); err != nil {
 			log.Info(fmt.Sprintf("UPDATE ERROR: %s; %+v", err.Error(), err))
+		}
+
+		if err := c.service.rollingUpdateCluster(ctx, cr); err != nil {
+			log.Info(fmt.Sprintf("ROLLING UPDATE ERROR: %s; %+v", err.Error(), err))
 		}
 
 		if err := c.unlockCluster(bgCtx, cr, []string{providerKopsUpdateLocked}); err != nil {

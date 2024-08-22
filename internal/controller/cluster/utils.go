@@ -19,6 +19,8 @@ const (
 	fileSuffixCreate  = "create"
 	fileSuffixObserve = "observe"
 	fileSuffixUpdate  = "update"
+
+	tmpDir = "/tmp"
 )
 
 type kopsClient struct {
