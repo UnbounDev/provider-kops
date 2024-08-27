@@ -1,0 +1,180 @@
+apiVersion: kops.crossplane.io/v1alpha1
+kind: Cluster
+metadata:
+  labels:
+    kops: xplane-kops
+  name: simple-xplane-kops.k8s.local
+spec:
+  forProvider:
+    cluster:
+      api:
+        loadBalancer:
+          class: Network
+          subnets:
+          - name: ext-0
+          - name: ext-1
+          - name: ext-2
+          type: Public
+      authorization:
+        rbac: {}
+      cloudLabels:
+        Careers: xplane-kops
+      cloudProvider: aws
+      clusterAutoscaler:
+        enabled: true
+      etcdClusters:
+      - etcdMembers:
+        - encryptedVolume: true
+          instanceGroup: ctrl-0
+          name: ctrl-0
+          volumeSize: 100
+          volumeType: gp3
+        - encryptedVolume: true
+          instanceGroup: ctrl-1
+          name: ctrl-1
+          volumeSize: 100
+          volumeType: gp3
+        - encryptedVolume: true
+          instanceGroup: ctrl-2
+          name: ctrl-2
+          volumeSize: 100
+          volumeType: gp3
+        manager:
+          env:
+          - name: ETCD_LISTEN_METRICS_URLS
+            value: http://0.0.0.0:8081
+          - name: ETCD_METRICS
+            value: basic
+          - name: ETCD_AUTO_COMPACTION_MODE
+            value: periodic
+          - name: ETCD_AUTO_COMPACTION_RETENTION
+            value: "12"
+          - name: ETCD_QUOTA_BACKEND_BYTES
+            value: "6000000000"
+        name: main
+      - etcdMembers:
+        - encryptedVolume: true
+          instanceGroup: ctrl-0
+          name: ctrl-0
+          volumeSize: 100
+          volumeType: gp3
+        - encryptedVolume: true
+          instanceGroup: ctrl-1
+          name: ctrl-1
+          volumeSize: 100
+          volumeType: gp3
+        - encryptedVolume: true
+          instanceGroup: ctrl-2
+          name: ctrl-2
+          volumeSize: 100
+          volumeType: gp3
+        manager:
+          env:
+          - name: ETCD_LISTEN_METRICS_URLS
+            value: http://0.0.0.0:8082
+          - name: ETCD_METRICS
+            value: basic
+          - name: ETCD_AUTO_COMPACTION_MODE
+            value: periodic
+          - name: ETCD_AUTO_COMPACTION_RETENTION
+            value: "12"
+          - name: ETCD_QUOTA_BACKEND_BYTES
+            value: "6000000000"
+        name: events
+      kubernetesVersion: v1.29.6
+      networkCIDR: yourVpcNetworkCidr
+      networkID: yourVpcId
+      nonMasqueradeCIDR: 100.64.0.0/10
+      sshAccess:
+      - 0.0.0.0/0
+      subnets:
+      - cidr: yourSubnetCidr
+        id: yourSubnetId
+        name: ext-0
+        type: Utility
+        zone: yourSubnetRegion
+      - cidr: yourSubnetCidr
+        id: yourSubnetId
+        name: ext-1
+        type: Utility
+        zone: yourSubnetRegion
+      - cidr: yourSubnetCidr
+        id: yourSubnetId
+        name: ext-2
+        type: Utility
+        zone: yourSubnetRegion
+      - cidr: yourSubnetCidr
+        id: yourSubnetId
+        name: cluster-0
+        type: Private
+        zone: yourSubnetRegion
+      - cidr: yourSubnetCidr
+        id: yourSubnetId
+        name: cluster-1
+        type: Private
+        zone: yourSubnetRegion
+      - cidr: yourSubnetCidr
+        id: yourSubnetId
+        name: cluster-2
+        type: Private
+        zone: yourSubnetRegion
+      topology:
+        dns:
+          type: Public
+    instanceGroups:
+    - name: ctrl-0
+      spec:
+        image: ami-0a0e5d9c7acc336f1
+        machineType: m5a.xlarge
+        maxSize: 1
+        minSize: 1
+        role: ControlPlane
+        rootVolumeEncryption: true
+        rootVolumeSize: 256
+        subnets:
+        - cluster-0
+    - name: ctrl-1
+      spec:
+        image: ami-0a0e5d9c7acc336f1
+        machineType: m5a.xlarge
+        maxSize: 1
+        minSize: 1
+        role: ControlPlane
+        rootVolumeEncryption: true
+        rootVolumeSize: 256
+        subnets:
+        - cluster-1
+    - name: ctrl-2
+      spec:
+        image: ami-0a0e5d9c7acc336f1
+        machineType: m5a.xlarge
+        maxSize: 1
+        minSize: 1
+        role: ControlPlane
+        rootVolumeEncryption: true
+        rootVolumeSize: 256
+        subnets:
+        - cluster-2
+    - name: cluster
+      spec:
+        image: ami-0a0e5d9c7acc336f1
+        machineType: m5a.large
+        maxSize: 100
+        minSize: 1
+        role: Node
+        rootVolumeEncryption: true
+        rootVolumeSize: 100
+        subnets:
+        - cluster-0
+        - cluster-1
+        - cluster-2
+    rollingUpdateOpts:
+      cloudOnly: true
+      validateCount: 0
+    state: s3://your-bucket
+  providerConfigRef:
+    name: aws-write
+  writeConnectionSecretToRef:
+    name: simple-xplane-kops
+    namespace: default
+
