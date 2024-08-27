@@ -359,7 +359,7 @@ type KeypairSpec struct {
 
 type SecretSpec struct {
 	Name string `yaml:"name" json:"name"`
-	// +kubebuilder:validation:Enum=ciliumpassword;dockerconfig;encryptionconfig
+	// +kubebuilder:validation:Enum=ciliumpassword;dockerconfig;encryptionconfig;keypair
 	Kind  string      `yaml:"kind" json:"kind"`
 	Value SecretValue `yaml:"value" json:"value"`
 }

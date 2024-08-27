@@ -1,5 +1,5 @@
 
-kind: KustomizationConfig
+#kind: KustomizationConfig
 
 images:
 - kind: Cluster

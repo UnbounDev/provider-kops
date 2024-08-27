@@ -1,5 +1,5 @@
 
-kind: Kustomization
+#kind: Kustomization
 
 resources:
 - cluster.yaml

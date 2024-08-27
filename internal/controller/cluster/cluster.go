@@ -137,6 +137,18 @@ type connector struct {
 	newServiceFn func(creds []byte, pubSshKey []byte) (*kopsClient, error)
 }
 
+func getClusterConnectionDetails(cr *v1alpha1.Cluster) (managed.ConnectionDetails, error) {
+	b, err := os.ReadFile(getKubeConfigFilePath(cr))
+	if err != nil {
+		log.Info(fmt.Sprintf("WARNING: kubeconfig file not found at '%s'", getKubeConfigFilePath(cr)))
+	}
+	connDetails := managed.ConnectionDetails{
+		"kubeconfig": b,
+	}
+
+	return connDetails, err
+}
+
 // Connect typically produces an ExternalClient by:
 // 1. Tracking that the managed resource is using a ProviderConfig.
 // 2. Getting the managed resource's ProviderConfig.
@@ -209,8 +221,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		ConnectionDetails: managed.ConnectionDetails{},
 	}
 
-	// These fmt statements should be removed in the real implementation.
-	// fmt.Printf("Observing: %+v", cr)
+	log.Debug(fmt.Sprintf("Observing: %+v", cr))
 
 	cluster, err := c.service.observeCluster(ctx, cr)
 	if err != nil {
@@ -223,6 +234,9 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 			return managed.ExternalObservation{}, err
 		}
 	} else if cluster != nil {
+
+		connDetails, _ := getClusterConnectionDetails(cr)
+		mo.ConnectionDetails = connDetails
 
 		// initialize status to a "ready" state and alter this based on annotations & diff
 		cr.Status.Status = apisv1alpha1.Ready
@@ -338,8 +352,8 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 			log.Info(fmt.Sprintf("Post create update error: %s; %+v", err.Error(), err))
 		}
 
-		// TODO(ab): we need to provide lifecycle management for keypairs, rather
-		// than only providing bootstrap creation
+		// TODO(ab): we need to provide lifecycle management for keypairs and secrets,
+		// rather than only providing bootstrap creation
 		for _, kp := range cr.Spec.ForProvider.Keypairs {
 			privateKeyData := []byte{}
 			if kp.Key != nil {
@@ -353,7 +367,18 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 				log.Info(fmt.Sprintf("Post create keypair error: %s; %+v", err.Error(), err))
 			}
 		}
-		if len(cr.Spec.ForProvider.Keypairs) > 0 {
+		for _, secret := range cr.Spec.ForProvider.Secrets {
+			secretData, err := resource.CommonCredentialExtractor(bgCtx, secret.Value.Source, c.kube, secret.Value.CommonCredentialSelectors)
+			if err != nil {
+				log.Info(fmt.Sprintf("Post create secret error: %s; %+v", err.Error(), err))
+			} else {
+				if err := c.service.createSecret(bgCtx, cr, &secret, secretData); err != nil {
+					log.Info(fmt.Sprintf("Post create secret error: %s; %+v", err.Error(), err))
+				}
+			}
+		}
+
+		if len(cr.Spec.ForProvider.Keypairs) > 0 || len(cr.Spec.ForProvider.Secrets) > 0 {
 			if err := c.service.updateCluster(bgCtx, cr); err != nil {
 				log.Info(fmt.Sprintf("POST CREATE UPDATE ERROR: %s; %+v", err.Error(), err))
 			}
@@ -433,14 +458,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		log.Info(fmt.Sprintf("Update complete for %s", cr.Name))
 	}()
 
-	b, err := os.ReadFile(getKubeConfigFilePath(cr))
-	if err != nil {
-		log.Info(fmt.Sprintf("WARNING: kubeconfig file not found at '%s'", getKubeConfigFilePath(cr)))
-	}
-	connDetails := managed.ConnectionDetails{
-		"kubeconfig": b,
-	}
-
+	connDetails, _ := getClusterConnectionDetails(cr)
 	return managed.ExternalUpdate{
 		// Optionally return any details that may be required to connect to the
 		// external resource. These will be stored as the connection secret.

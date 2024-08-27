@@ -169,6 +169,42 @@ func (k *kopsClient) createKeypair(_ context.Context, cr *v1alpha1.Cluster, kp *
 	return nil
 }
 
+func (k *kopsClient) createSecret(_ context.Context, cr *v1alpha1.Cluster, secret *v1alpha1.SecretSpec, secretData []byte) error {
+	args := []string{}
+	if len(secretData) > 0 {
+		f, err := os.CreateTemp(tmpDir, fmt.Sprintf("%s_*.secret", secret.Kind))
+		if err != nil {
+			return err
+		}
+		_, err = f.Write(secretData)
+		if err != nil {
+			return err
+		}
+		args = append(args, fmt.Sprintf("--filename=%s", f.Name()))
+		defer os.Remove(f.Name())
+	}
+	//nolint:gosec
+	cmd := exec.Command(
+		"kops",
+		"create",
+		"secret",
+		"-v5",
+		secret.Kind,
+		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
+		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
+	)
+	cmd.Args = append(cmd.Args, args...)
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return errors.Wrap(err, string(output))
+	} else {
+		log.Debug(string(output))
+	}
+
+	return nil
+}
+
 func (k *kopsClient) authenticateToCluster(ctx context.Context, cr *v1alpha1.Cluster, extraArgs []string) error {
 
 	//nolint:gosec
