@@ -13,41 +13,95 @@ import (
 
 	"github.com/crossplane/provider-kops/apis/v1alpha1"
 	apisv1alpha1 "github.com/crossplane/provider-kops/apis/v1alpha1"
+	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
-	diff "github.com/r3labs/diff/v3"
 	"gopkg.in/yaml.v3"
-
-	api "k8s.io/kops/pkg/apis/kops"
-	"k8s.io/kops/pkg/client/simple"
-	"k8s.io/kops/pkg/client/simple/vfsclientset"
-	"k8s.io/kops/util/pkg/vfs"
 )
 
-func buildKopsClientset(cr *apisv1alpha1.Cluster) (simple.Clientset, error) {
+//func buildKopsClientset(cr *apisv1alpha1.Cluster) (simple.Clientset, error) {
+//
+//	vfsContext := vfs.NewVFSContext()
+//	registryBase, err := vfsContext.BuildVfsPath(cr.Spec.ForProvider.State)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	clientset := vfsclientset.NewVFSClientset(vfsContext, registryBase)
+//	return clientset, nil
+//}
 
-	vfsContext := vfs.NewVFSContext()
-	registryBase, err := vfsContext.BuildVfsPath(cr.Spec.ForProvider.State)
-	if err != nil {
-		return nil, err
+func (k *kopsClient) observeCluster(ctx context.Context, cr *apisv1alpha1.Cluster) (*apisv1alpha1.KopsClusterSpec, map[string]*apisv1alpha1.KopsInstanceGroupSpec, error) {
+	clusterYaml := &clusterYaml{}
+	instanceGroupSpecMap := map[string]*apisv1alpha1.KopsInstanceGroupSpec{}
+
+	// pull the cluster definition
+	{
+		var stdOut, stdErr bytes.Buffer
+
+		//nolint:gosec
+		cmd := exec.CommandContext(
+			ctx,
+			"kops",
+			"get",
+			"cluster",
+			"--output=yaml",
+			fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
+			fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
+		)
+		cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+		cmd.Stdout = &stdOut
+		cmd.Stderr = &stdErr
+		if err := cmd.Run(); err != nil {
+			return &apisv1alpha1.KopsClusterSpec{}, instanceGroupSpecMap, errors.Wrapf(err, "cmd: %s; stderr: %s; stdout: %s", cmd.String(), stdErr.String(), stdOut.String())
+		}
+
+		output := stdOut.Bytes()
+		log.Debug(string(output))
+
+		if err := yaml.Unmarshal(output, clusterYaml); err != nil {
+			return &apisv1alpha1.KopsClusterSpec{}, instanceGroupSpecMap, errors.Wrapf(err, "fucked that")
+		}
 	}
 
-	clientset := vfsclientset.NewVFSClientset(vfsContext, registryBase)
-	return clientset, nil
-}
+	// pull the instance group definitions
+	{
+		var stdOut, stdErr bytes.Buffer
 
-func (k *kopsClient) observeCluster(ctx context.Context, cr *apisv1alpha1.Cluster) (*api.Cluster, error) {
+		//nolint:gosec
+		cmd := exec.CommandContext(
+			ctx,
+			"kops",
+			"get",
+			"instancegroups",
+			"--output=yaml",
+			fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
+			fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
+		)
+		cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+		cmd.Stdout = &stdOut
+		cmd.Stderr = &stdErr
+		if err := cmd.Run(); err != nil {
+			return &apisv1alpha1.KopsClusterSpec{}, instanceGroupSpecMap, errors.Wrapf(err, "cmd: %s; stderr: %s; stdout: %s", cmd.String(), stdErr.String(), stdOut.String())
+		}
+		output := stdOut.Bytes()
+		log.Debug(string(output))
 
-	clientset, err := buildKopsClientset(cr)
-	if err != nil {
-		return nil, err
+		instanceGroupYamls := []*instanceGroupYaml{}
+		dec := yaml.NewDecoder(bytes.NewReader(output))
+		for {
+			var ig instanceGroupYaml
+			if dec.Decode(&ig) != nil {
+				break
+			}
+			instanceGroupYamls = append(instanceGroupYamls, &ig)
+		}
+		for _, ig := range instanceGroupYamls {
+			instanceGroupSpecMap[ig.Metadata.Name] = &ig.Spec
+		}
+
 	}
 
-	cluster, err := clientset.GetCluster(ctx, getClusterExternalName(cr))
-	if err != nil {
-		return nil, err
-	}
-
-	return cluster, nil
+	return &clusterYaml.Spec, instanceGroupSpecMap, nil
 }
 
 func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) error {
@@ -275,115 +329,43 @@ func (k *kopsClient) validateCluster(ctx context.Context, cr *v1alpha1.Cluster, 
 
 }
 
-func (k *kopsClient) diffCluster(ctx context.Context, cr *v1alpha1.Cluster) ([]diffChangelogSpec, error) {
-
-	diffChangelog := []diffChangelogSpec{}
-
-	sourceClusterYaml, sourceInstanceGroupYamls, err := buildKopsYamlStructs(cr)
+func (k *kopsClient) diffClusterV2(ctx context.Context, cr *v1alpha1.Cluster) ([]observedDelta, error) {
+	clusterYaml, igYamls, err := buildKopsYamlStructs(cr)
+	changes := []observedDelta{}
 	if err != nil {
-		return diffChangelog, err
+		return changes, err
 	}
 
-	sourceInstanceGroupYamlsMap := map[string]instanceGroupYaml{}
-	for _, ig := range sourceInstanceGroupYamls {
-		sourceInstanceGroupYamlsMap[ig.Metadata.Name] = ig
+	if !cmp.Equal(cr.Status.AtProvider.ClusterSpec, &clusterYaml.Spec) {
+		diff := cmp.Diff(cr.Status.AtProvider.ClusterSpec, &clusterYaml.Spec)
+		log.Info(diff)
+		changes = append(changes, observedDelta{
+			Operation: observedDeltaOperation(updateDelta),
+			Resource:  observedDeltaResource(cluster),
+			Diff:      diff,
+		})
 	}
 
-	externalClusterYaml := clusterYaml{}
-	externalInstanceGroupYamlsMap := map[string]instanceGroupYaml{}
-
-	var stdOut, stdErr bytes.Buffer
-
-	//nolint:gosec
-	cmd := exec.CommandContext(
-		ctx,
-		"kops",
-		"get",
-		"cluster",
-		"--output=yaml",
-		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
-		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
-	)
-	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
-	cmd.Stdout = &stdOut
-	cmd.Stderr = &stdErr
-	if err := cmd.Run(); err != nil {
-		return diffChangelog, errors.Wrapf(err, "cmd: %s; stderr: %s; stdout: %s", cmd.String(), stdErr.String(), stdOut.String())
-	}
-	output := stdOut.Bytes()
-	log.Debug(string(output))
-
-	if err := yaml.Unmarshal(output, &externalClusterYaml); err != nil {
-		return diffChangelog, errors.Wrapf(err, "stdout: %s", string(output))
-	}
-
-	{
-		var stdOut, stdErr bytes.Buffer
-
-		//nolint:gosec
-		cmd := exec.CommandContext(
-			ctx,
-			"kops",
-			"get",
-			"instancegroups",
-			"--output=yaml",
-			fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
-			fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
-		)
-		cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
-		cmd.Stdout = &stdOut
-		cmd.Stderr = &stdErr
-		if err := cmd.Run(); err != nil {
-			return diffChangelog, errors.Wrapf(err, "cmd: %s; stderr: %s; stdout: %s", cmd.String(), stdErr.String(), stdOut.String())
-		}
-		output = stdOut.Bytes()
-		log.Debug(string(output))
-
-		dec := yaml.NewDecoder(bytes.NewReader(output))
-		for {
-			var ig instanceGroupYaml
-			if dec.Decode(&ig) != nil {
-				break
+	for _, igDesired := range igYamls {
+		igSource := cr.Status.AtProvider.InstanceGroupSpecs[igDesired.Metadata.Name]
+		if igSource == nil {
+			changes = append(changes, observedDelta{
+				Operation: observedDeltaOperation(createDelta),
+				Resource:  observedDeltaResource(instanceGroup),
+			})
+		} else {
+			if !cmp.Equal(igSource, &igDesired.Spec) {
+				diff := cmp.Diff(igSource, &igDesired.Spec)
+				changes = append(changes, observedDelta{
+					Operation: observedDeltaOperation(updateDelta),
+					Resource:  observedDeltaResource(instanceGroup),
+					Diff:      diff,
+				})
 			}
-			externalInstanceGroupYamlsMap[ig.Metadata.Name] = ig
 		}
 	}
 
-	changelog1, err := diff.Diff(externalClusterYaml.Spec, sourceClusterYaml.Spec)
-	if err != nil {
-		return diffChangelog, err
-	}
-
-	changelog2, err := diff.Diff(externalInstanceGroupYamlsMap, sourceInstanceGroupYamlsMap)
-	if err != nil {
-		return diffChangelog, err
-	}
-
-	for _, c := range append(changelog1, changelog2...) {
-
-		includeD := true
-		d := diffChangelogSpec{
-			Type: c.Type,
-			Path: c.Path,
-			From: c.From,
-			To:   c.To,
-		}
-
-		// ignore the kops state diff that attempts to change the `Role` from `Master` to `ControlPlane`
-		// bc this state _never_ updates in the final config in the kops state store, so this would just
-		// update infinitely
-		f, okF := d.From.(v1alpha1.InstanceGroupRole)
-		t, okT := d.To.(v1alpha1.InstanceGroupRole)
-		if okF && okT && string(d.Path[len(d.Path)-1]) == "Role" && f == v1alpha1.InstanceGroupRoleMaster && t == v1alpha1.InstanceGroupRoleControlPlane {
-			includeD = false
-		}
-
-		if includeD {
-			diffChangelog = append(diffChangelog, d)
-		}
-	}
-
-	return diffChangelog, nil
+	return changes, nil
 }
 
 func (k *kopsClient) updateCluster(ctx context.Context, cr *v1alpha1.Cluster) error {

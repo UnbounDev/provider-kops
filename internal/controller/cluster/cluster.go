@@ -39,7 +39,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
-	"github.com/crossplane/provider-kops/apis/v1alpha1"
 	apisv1alpha1 "github.com/crossplane/provider-kops/apis/v1alpha1"
 	"github.com/crossplane/provider-kops/internal/features"
 )
@@ -102,7 +101,7 @@ var (
 
 // Setup adds a controller that reconciles Cluster managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
-	name := managed.ControllerName(v1alpha1.ClusterGroupKind)
+	name := managed.ControllerName(apisv1alpha1.ClusterGroupKind)
 	log = o.Logger
 
 	cps := []managed.ConnectionPublisher{managed.NewAPISecretPublisher(mgr.GetClient(), mgr.GetScheme())}
@@ -111,7 +110,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 	}
 
 	r := managed.NewReconciler(mgr,
-		resource.ManagedKind(v1alpha1.ClusterGroupVersionKind),
+		resource.ManagedKind(apisv1alpha1.ClusterGroupVersionKind),
 		managed.WithExternalConnecter(&connector{
 			kube:         mgr.GetClient(),
 			usage:        resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
@@ -125,7 +124,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 		Named(name).
 		WithOptions(o.ForControllerRuntime()).
 		WithEventFilter(resource.DesiredStateChanged()).
-		For(&v1alpha1.Cluster{}).
+		For(&apisv1alpha1.Cluster{}).
 		Complete(ratelimiter.NewReconciler(name, r, o.GlobalRateLimiter))
 }
 
@@ -137,7 +136,7 @@ type connector struct {
 	newServiceFn func(creds []byte, pubSshKey []byte) (*kopsClient, error)
 }
 
-func getClusterConnectionDetails(cr *v1alpha1.Cluster) (managed.ConnectionDetails, error) {
+func getClusterConnectionDetails(cr *apisv1alpha1.Cluster) (managed.ConnectionDetails, error) {
 	b, err := os.ReadFile(getKubeConfigFilePath(cr))
 	if err != nil {
 		log.Info(fmt.Sprintf("WARNING: kubeconfig file not found at '%s'", getKubeConfigFilePath(cr)))
@@ -155,7 +154,7 @@ func getClusterConnectionDetails(cr *v1alpha1.Cluster) (managed.ConnectionDetail
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-	cr, ok := mg.(*v1alpha1.Cluster)
+	cr, ok := mg.(*apisv1alpha1.Cluster)
 	if !ok {
 		return nil, errors.New(errNotCluster)
 	}
@@ -200,7 +199,7 @@ type external struct {
 }
 
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
-	cr, ok := mg.(*v1alpha1.Cluster)
+	cr, ok := mg.(*apisv1alpha1.Cluster)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotCluster)
 	}
@@ -223,7 +222,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	log.Debug(fmt.Sprintf("Observing: %+v", cr))
 
-	cluster, err := c.service.observeCluster(ctx, cr)
+	cluster, igs, err := c.service.observeCluster(ctx, cr)
 	if err != nil {
 		log.Debug(fmt.Sprintf("cluster not found: %s", err.Error()))
 		if strings.Contains(err.Error(), "not found") {
@@ -235,68 +234,78 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		}
 	} else if cluster != nil {
 
+		cr.Status.AtProvider.ClusterSpec = cluster
+		cr.Status.AtProvider.InstanceGroupSpecs = igs
 		connDetails, _ := getClusterConnectionDetails(cr)
 		mo.ConnectionDetails = connDetails
 
-		// initialize status to a "ready" state and alter this based on annotations & diff
-		cr.Status.Status = apisv1alpha1.Ready
+		// initialize status to a "progressing" state and alter this based on annotations & diff
+		cr.Status.Status = apisv1alpha1.Progressing
 		annotations := cr.GetAnnotations()
 
 		// check lock to prevent concurrent updates to state etc..
-		//	_, resourceReconciling := annotations[providerKopsReconcilePending]
-		//	if resourceReconciling {
-		//		// TODO: print log indicating that the resource may not be updated, instruct
-		//		// removal of the lock annotation if needed
-		//		return mo, nil
-		//	} else {
-		//		if err := c.annotateCluster(ctx, cr, map[string]string{providerKopsReconcilePending: ""}); err != nil {
-		//			return mo, err
-		//		}
-		//	}
-
-		// check lock to prevent concurrent updates to state etc..
-		_, resourceLocked := annotations[providerKopsUpdateLocked]
-		if resourceLocked {
-			// TODO: print log indicating that the resource may not be updated, instruct
-			// removal of the lock annotation if needed
-			cr.SetConditions(xpv1.Unavailable())
-			return mo, nil
-		}
+		//_, resourceLocked := annotations[providerKopsUpdateLocked]
+		//if resourceLocked {
+		//	// TODO: print log indicating that the resource may not be updated, instruct
+		//	// removal of the lock annotation if needed
+		//	mo.ResourceExists = true
+		//	mo.ResourceUpToDate = false
+		//	cr.SetConditions(xpv1.Unavailable())
+		//	return mo, nil
+		//}
 
 		// check for initial creation annotations
 		_, resourceCreating := annotations[providerKopsCreatePending]
 		_, resourceCreated := annotations[providerKopsCreateComplete]
 		if resourceCreating && !resourceCreated {
-			cr.Status.Status = apisv1alpha1.Updating
+			cr.Status.Status = apisv1alpha1.Progressing
 		}
 
 		// now run validation w/ fallback for authentication to the cluster
 		output, err := c.service.validateCluster(ctx, cr, []string{})
 		if err != nil && strings.Contains(err.Error(), errNoAuth) {
 			if err := c.service.authenticateToCluster(ctx, cr, []string{}); err != nil {
-				return managed.ExternalObservation{}, err
+
+				mo.ResourceUpToDate = false
+				return mo, err
+			} else {
+				// reset err to nil so we don't inadvertently log it in this case (re-validation will occur on the next pass)
+				err = nil
 			}
 		}
 
 		if len(output.Failures) == 0 && err == nil {
 			cr.Status.Status = apisv1alpha1.Ready
 
-			changelog, err := c.service.diffCluster(ctx, cr)
+			changelog, err := c.service.diffClusterV2(ctx, cr)
 			if err != nil {
-				return managed.ExternalObservation{}, err
+				log.Debug(fmt.Sprintf("Diff error detected: %s", err.Error()))
+				mo.ResourceUpToDate = false
+				return mo, err
 			}
 			if len(changelog) > 0 {
 				// set status to prompt update
 				cr.Status.Status = apisv1alpha1.Updating
-				if changelogjson, err := json.Marshal(changelog); err == nil {
-					log.Debug(fmt.Sprintf("Change detected: %s", string(changelogjson)))
+				mo.ResourceUpToDate = false
+				for _, change := range changelog {
+					if changeJson, err := json.Marshal(change); err != nil {
+						log.Debug(fmt.Sprintf("Change detected: %s", changeJson))
+					} else {
+						log.Debug(fmt.Sprintf("Change detected: %+v", change))
+					}
 				}
 			}
 			// TODO(ab): check annotations for trigger to perform update
 			// TODO(ab): check annotations for trigger to perform rolling-update
 		}
 		if err != nil {
-			log.Info(fmt.Sprintf("WARNING OBSERVER ERROR: %s; %s", err.Error(), output))
+			if resourceCreating {
+				log.Debug(fmt.Sprintf("Validation errors on cluster still creating: %s", cr.Name))
+				// TODO: it'd be really nice to include the validation errors in the xplane condition reason..
+			} else {
+				// TODO: in this case we need to determine if there are any _ongoing_ operations for this cluster
+				log.Info(fmt.Sprintf("Cluster validation errors for %s: %s; %s", cr.Name, err.Error(), output))
+			}
 		}
 	}
 
@@ -311,6 +320,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		mo.ResourceExists = true
 		cr.SetConditions(xpv1.Available())
 	case apisv1alpha1.Updating:
+	case apisv1alpha1.Progressing:
 		mo.ResourceExists = true
 		mo.ResourceUpToDate = false
 		// NB! We set the status to `Unavailable` bc the cluster is not
@@ -318,23 +328,51 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		// a user needs to manually intervene and fix the cluster state
 		// before the controller can resume management
 		cr.SetConditions(xpv1.Unavailable())
+	default:
+		mo.ResourceUpToDate = false
+		cr.Status.Status = apisv1alpha1.Unknown
+		cr.SetConditions(xpv1.Unavailable())
 	}
 
 	return mo, nil
 }
 
+// Create "creates" the k8s cluster and instance groups and initial secrets based on cr parameters,
+// we use k8s annotations to manage the resource lifecycle and prevent concurrent executions of the
+// `kops` cli; these are:
+//
+// 1. On initial call to `Create`:
+//   - set annotations `{providerKopsCreatePending, providerKopsUpdateLocked}`
+//   - note that crossplane will _also_ set annotation `{crossplaneCreateSucceeded}` on the initial call
+//
+// 2. On completion of initial `Create` go func:
+//   - set annotation `{providerKopsCreateComplete}`
+//   - remove annotations `{providerKopsCreatePending, providerKopsUpdateLocked}`
+//
+// If the process crashes or otherwise requires manual intervention to correct the state of the
+// external cluster, then it may be necessary to manually remove `{providerKopsCreatePending, providerKopsUpdateLocked}`
+// and to manually set `{providerKopsCreateComplete}` on the clusters.kops.crossplane.io resource
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
-	cr, ok := mg.(*v1alpha1.Cluster)
+	cr, ok := mg.(*apisv1alpha1.Cluster)
 	if !ok {
 		return managed.ExternalCreation{}, errors.New(errNotCluster)
 	}
 
+	connDetails := managed.ConnectionDetails{
+		"kubeconfig": []byte{},
+	}
+	mo := managed.ExternalCreation{ConnectionDetails: connDetails}
+
 	if _, ok := cr.Annotations[crossplaneCreateSucceeded]; ok {
+		log.Debug(fmt.Sprintf("Already created: %s", cr.Name))
+		return mo, nil
+	}
+	if _, ok := cr.Annotations[providerKopsCreatePending]; ok {
 		log.Debug(fmt.Sprintf("Already creating: %s", cr.Name))
-		return managed.ExternalCreation{}, nil
+		return mo, nil
 	}
 	if err := c.lockCluster(ctx, cr, []string{providerKopsCreatePending, providerKopsUpdateLocked}); err != nil {
-		return managed.ExternalCreation{}, err
+		return mo, err
 	}
 
 	log.Info(fmt.Sprintf("Begin creating: %s", cr.Name))
@@ -399,43 +437,43 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		}
 	}()
 
-	connDetails := managed.ConnectionDetails{
-		"kubeconfig": []byte{},
-	}
-
-	return managed.ExternalCreation{
-		// Optionally return any details that may be required to connect to the
-		// external resource. These will be stored as the connection secret.
-		ConnectionDetails: connDetails,
-	}, nil
+	return mo, nil
 }
 
-func (c *external) getCluster(ctx context.Context, cr *v1alpha1.Cluster) (*v1alpha1.Cluster, error) {
-	fcrn := types.NamespacedName{
-		Name:      cr.Name,
-		Namespace: cr.Namespace,
-	}
-	fcr := &v1alpha1.Cluster{}
-	if err := c.kube.Get(ctx, fcrn, fcr); err != nil {
-		return fcr, err
-	}
-	return fcr, nil
-}
-
+// Update "updates" the k8s cluster and instance groups and initial secrets based on cr parameters,
+// we use k8s annotations to manage the resource lifecycle and prevent concurrent executions of the
+// `kops` cli; these are:
+//
+// 1. On initial call to `Update`:
+//   - set annotation `{providerKopsUpdateLocked}`
+//
+// 2. On completion of initial `Update` go func:
+//   - remove annotations `{providerKopsUpdateLocked}`
+//
+// Note that this means cluster and instance changes are applied _sequentially_, it's totally normal
+// for a delta to exist between the desired and observed state of the resource while a previous
+// update operation is ongoing.
+//
+// NB! Just as w/ the `Create` operation, if the process crashes or otherwise requires manual
+// intervention to correct the state of the external cluster, then it may be necessary to manually
+// remove `{providerKopsUpdateLocked}` from the resource
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
-	cr, ok := mg.(*v1alpha1.Cluster)
+	cr, ok := mg.(*apisv1alpha1.Cluster)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errNotCluster)
 	}
 
+	connDetails, _ := getClusterConnectionDetails(cr)
+	mo := managed.ExternalUpdate{ConnectionDetails: connDetails}
+
 	_, resourceLocked := cr.Annotations[providerKopsUpdateLocked]
 	if resourceLocked {
 		log.Debug(fmt.Sprintf("Already updating %s", cr.Name))
-		return managed.ExternalUpdate{}, nil
+		return mo, nil
 	}
 
 	if err := c.lockCluster(ctx, cr, []string{providerKopsUpdateLocked}); err != nil {
-		return managed.ExternalUpdate{}, err
+		return mo, err
 	}
 
 	log.Info(fmt.Sprintf("Begin updating: %+v", cr.Name))
@@ -458,16 +496,11 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		log.Info(fmt.Sprintf("Update complete for %s", cr.Name))
 	}()
 
-	connDetails, _ := getClusterConnectionDetails(cr)
-	return managed.ExternalUpdate{
-		// Optionally return any details that may be required to connect to the
-		// external resource. These will be stored as the connection secret.
-		ConnectionDetails: connDetails,
-	}, nil
+	return mo, nil
 }
 
 func (c *external) Delete(ctx context.Context, mg resource.Managed) error {
-	cr, ok := mg.(*v1alpha1.Cluster)
+	cr, ok := mg.(*apisv1alpha1.Cluster)
 	if !ok {
 		return errors.New(errNotCluster)
 	}
@@ -482,7 +515,19 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) error {
 	return nil
 }
 
-func (c *external) annotateCluster(ctx context.Context, cr *v1alpha1.Cluster, annotations map[string]string) error {
+func (c *external) getCluster(ctx context.Context, cr *apisv1alpha1.Cluster) (*apisv1alpha1.Cluster, error) {
+	fcrn := types.NamespacedName{
+		Name:      cr.Name,
+		Namespace: cr.Namespace,
+	}
+	fcr := &apisv1alpha1.Cluster{}
+	if err := c.kube.Get(ctx, fcrn, fcr); err != nil {
+		return fcr, err
+	}
+	return fcr, nil
+}
+
+func (c *external) annotateCluster(ctx context.Context, cr *apisv1alpha1.Cluster, annotations map[string]string) error {
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		fcr, err := c.getCluster(ctx, cr)
 		if err != nil {
@@ -498,7 +543,7 @@ func (c *external) annotateCluster(ctx context.Context, cr *v1alpha1.Cluster, an
 	return err
 }
 
-func (c *external) lockCluster(ctx context.Context, cr *v1alpha1.Cluster, lockKeys []string) error {
+func (c *external) lockCluster(ctx context.Context, cr *apisv1alpha1.Cluster, lockKeys []string) error {
 	annotations := map[string]string{}
 	for _, k := range lockKeys {
 		annotations[k] = ""
@@ -506,7 +551,7 @@ func (c *external) lockCluster(ctx context.Context, cr *v1alpha1.Cluster, lockKe
 	return c.annotateCluster(ctx, cr, annotations)
 }
 
-func (c *external) unlockCluster(ctx context.Context, cr *v1alpha1.Cluster, lockKeys []string) error {
+func (c *external) unlockCluster(ctx context.Context, cr *apisv1alpha1.Cluster, lockKeys []string) error {
 	// clear the lock
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		fcr, err := c.getCluster(ctx, cr)

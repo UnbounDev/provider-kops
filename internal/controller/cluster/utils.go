@@ -73,6 +73,24 @@ type metadataInstanceGroupSpec struct {
 	Labels map[string]string `yaml:"labels,omitempty"`
 }
 
+type observedDelta struct {
+	Operation observedDeltaOperation `json:"operation"`
+	Resource  observedDeltaResource  `json:"resource"`
+	Diff      string                 `json:"diff"`
+}
+
+type observedDeltaOperation string
+type observedDeltaResource string
+
+const (
+	createDelta observedDeltaOperation = "create"
+	updateDelta observedDeltaOperation = "update"
+	deleteDelta observedDeltaOperation = "delete"
+
+	cluster       observedDeltaResource = "cluster"
+	instanceGroup observedDeltaResource = "instanceGroup"
+)
+
 func getClusterExternalName(cr *apisv1alpha1.Cluster) string {
 	if externalName, ok := cr.Annotations[crossplaneExternalName]; ok {
 		return externalName
@@ -96,9 +114,6 @@ func modifyInstanceGroupYaml(cr *apisv1alpha1.Cluster, ig *apisv1alpha1.Instance
 	if reflect.ValueOf(igy.Metadata.Labels).IsNil() {
 		igy.Metadata.Labels = make(map[string]string)
 	}
-	if reflect.ValueOf(igy.Spec.CloudLabels).IsNil() {
-		igy.Spec.CloudLabels = make(map[string]string)
-	}
 	if reflect.ValueOf(igy.Spec.NodeLabels).IsNil() {
 		igy.Spec.NodeLabels = make(map[string]string)
 	}
@@ -106,10 +121,19 @@ func modifyInstanceGroupYaml(cr *apisv1alpha1.Cluster, ig *apisv1alpha1.Instance
 	igy.Spec.NodeLabels["kops.k8s.io/instancegroup"] = ig.Name
 
 	if cr.Spec.ForProvider.Cluster.ClusterAutoscaler.Enabled && ig.Spec.Role != apisv1alpha1.InstanceGroupRoleControlPlane {
+
+		if reflect.ValueOf(igy.Spec.CloudLabels).IsNil() {
+			igy.Spec.CloudLabels = make(map[string]string)
+		}
+
 		igy.Spec.CloudLabels["k8s.io/cluster-autoscaler/enabled"] = ""
 		igy.Spec.CloudLabels["k8s.io/cluster-autoscaler/node-template/label"] = ""
 		igy.Spec.CloudLabels[fmt.Sprintf("k8s.io/cluster-autoscaler/%s", getClusterExternalName(cr))] = ""
 		igy.Spec.NodeLabels["autoscaling.k8s.io/nodegroup"] = fmt.Sprintf("%s.%s", ig.Name, getClusterExternalName(cr))
+	}
+
+	if igy.Spec.Role == apisv1alpha1.InstanceGroupRoleControlPlane {
+		igy.Spec.Role = apisv1alpha1.InstanceGroupRoleMaster
 	}
 }
 

@@ -130,10 +130,10 @@ spec:
                         type: object
                       authorization:
                         properties:
+                          alwaysAllow:
+                            type: object
                           rbac:
                             type: object
-                        required:
-                        - rbac
                         type: object
                       certManager:
                         properties:
@@ -164,8 +164,6 @@ spec:
                         - containerd
                         type: string
                       encryptionConfig:
-                        description: Docker              DockerSpec        `yaml:"docker,omitempty"
-                          json:"docker,omitempty"`
                         type: boolean
                       etcdClusters:
                         items:
@@ -299,6 +297,7 @@ spec:
                             default: /srv/kubernetes/ca.crt
                             type: string
                           disableBasicAuth:
+                            default: true
                             type: boolean
                           oidcClientID:
                             type: string
@@ -308,20 +307,6 @@ spec:
                             type: string
                           oidcUsernameClaim:
                             type: string
-                        required:
-                        - auditLogMaxAge
-                        - auditLogMaxBackups
-                        - auditLogMaxSize
-                        - auditLogPath
-                        - auditPolicyFile
-                        - auditWebhookBatchMaxWait
-                        - auditWebhookConfigFile
-                        - clientCAFile
-                        - disableBasicAuth
-                        - oidcClientID
-                        - oidcGroupsClaim
-                        - oidcIssuerURL
-                        - oidcUsernameClaim
                         type: object
                       kubeDNS:
                         properties:
@@ -340,6 +325,7 @@ spec:
                       kubelet:
                         properties:
                           anonymousAuth:
+                            default: false
                             type: boolean
                           authenticationTokenWebhook:
                             type: boolean
@@ -349,18 +335,15 @@ spec:
                             type: string
                           readOnlyPort:
                             type: integer
-                        required:
-                        - anonymousAuth
-                        - authenticationTokenWebhook
-                        - authorizationMode
-                        - podInfraContainerImage
-                        - readOnlyPort
                         type: object
                       kubernetesApiAccess:
+                        default:
+                        - 0.0.0.0/0
                         items:
                           type: string
                         type: array
                       kubernetesVersion:
+                        default: v1.29.6
                         type: string
                       metricsServer:
                         description: MasterInternalName  string            `yaml:"masterInternalName,omitempty"
@@ -388,6 +371,8 @@ spec:
                       nonMasqueradeCIDR:
                         type: string
                       sshAccess:
+                        default:
+                        - 0.0.0.0/0
                         items:
                           type: string
                         type: array
@@ -472,6 +457,7 @@ spec:
                               enum:
                               - ControlPlane
                               - Node
+                              - Master
                               type: string
                             rollingUpdate:
                               properties:
@@ -884,8 +870,414 @@ spec:
               atProvider:
                 description: ClusterObservation are the observable fields of a Cluster.
                 properties:
-                  observableField:
-                    type: string
+                  clusterSpec:
+                    description: |-
+                      KopsClusterSpec
+                      for options description; ref: https://github.com/kubernetes/kops/blob/master/docs/cluster_spec.md
+                      for code gen; ref: https://book.kubebuilder.io/reference/markers
+                    properties:
+                      additionalPolicies:
+                        properties:
+                          master:
+                            type: string
+                          node:
+                            type: string
+                        required:
+                        - master
+                        - node
+                        type: object
+                      api:
+                        properties:
+                          loadBalancer:
+                            properties:
+                              class:
+                                type: string
+                              crossZoneLoadBalancing:
+                                type: boolean
+                              idleTimeoutSeconds:
+                                type: integer
+                              sslCertificate:
+                                type: string
+                              sslPolicy:
+                                type: string
+                              subnets:
+                                items:
+                                  properties:
+                                    allocationId:
+                                      type: string
+                                    name:
+                                      type: string
+                                    privateIPv4Address:
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                                type: array
+                              type:
+                                type: string
+                            required:
+                            - class
+                            - type
+                            type: object
+                        type: object
+                      assets:
+                        properties:
+                          containerRegistry:
+                            type: string
+                        type: object
+                      authorization:
+                        properties:
+                          alwaysAllow:
+                            type: object
+                          rbac:
+                            type: object
+                        type: object
+                      certManager:
+                        properties:
+                          enabled:
+                            type: boolean
+                        required:
+                        - enabled
+                        type: object
+                      channel:
+                        type: string
+                      cloudLabels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      cloudProvider:
+                        type: string
+                      clusterAutoscaler:
+                        properties:
+                          enabled:
+                            type: boolean
+                        required:
+                        - enabled
+                        type: object
+                      configBase:
+                        type: string
+                      containerRuntime:
+                        enum:
+                        - containerd
+                        type: string
+                      encryptionConfig:
+                        type: boolean
+                      etcdClusters:
+                        items:
+                          properties:
+                            etcdMembers:
+                              items:
+                                properties:
+                                  encryptedVolume:
+                                    type: boolean
+                                  instanceGroup:
+                                    type: string
+                                  name:
+                                    type: string
+                                  volumeSize:
+                                    type: integer
+                                  volumeType:
+                                    type: string
+                                required:
+                                - encryptedVolume
+                                - instanceGroup
+                                - name
+                                - volumeSize
+                                - volumeType
+                                type: object
+                              type: array
+                            manager:
+                              properties:
+                                env:
+                                  items:
+                                    properties:
+                                      name:
+                                        type: string
+                                      value:
+                                        type: string
+                                    required:
+                                    - name
+                                    - value
+                                    type: object
+                                  type: array
+                              required:
+                              - env
+                              type: object
+                            name:
+                              type: string
+                          required:
+                          - etcdMembers
+                          - manager
+                          - name
+                          type: object
+                        type: array
+                      fileAssets:
+                        items:
+                          properties:
+                            content:
+                              type: string
+                            mode:
+                              default: "0440"
+                              type: string
+                            name:
+                              type: string
+                            path:
+                              type: string
+                            roles:
+                              items:
+                                enum:
+                                - ControlPlane
+                                - Node
+                                type: string
+                              type: array
+                          required:
+                          - content
+                          - mode
+                          - name
+                          - path
+                          - roles
+                          type: object
+                        type: array
+                      hooks:
+                        items:
+                          properties:
+                            manifest:
+                              type: string
+                            name:
+                              type: string
+                            roles:
+                              items:
+                                enum:
+                                - Master
+                                - Node
+                                type: string
+                              type: array
+                            useRawManifest:
+                              type: boolean
+                          required:
+                          - manifest
+                          - roles
+                          - useRawManifest
+                          type: object
+                        type: array
+                      iam:
+                        properties:
+                          allowContainerRegistry:
+                            type: boolean
+                          legacy:
+                            type: boolean
+                        required:
+                        - allowContainerRegistry
+                        - legacy
+                        type: object
+                      kubeAPIServer:
+                        properties:
+                          apiAudiences:
+                            items:
+                              type: string
+                            type: array
+                          auditLogMaxAge:
+                            type: integer
+                          auditLogMaxBackups:
+                            type: integer
+                          auditLogMaxSize:
+                            type: integer
+                          auditLogPath:
+                            type: string
+                          auditPolicyFile:
+                            type: string
+                          auditWebhookBatchMaxWait:
+                            type: string
+                          auditWebhookConfigFile:
+                            type: string
+                          clientCAFile:
+                            default: /srv/kubernetes/ca.crt
+                            type: string
+                          disableBasicAuth:
+                            default: true
+                            type: boolean
+                          oidcClientID:
+                            type: string
+                          oidcGroupsClaim:
+                            type: string
+                          oidcIssuerURL:
+                            type: string
+                          oidcUsernameClaim:
+                            type: string
+                        type: object
+                      kubeDNS:
+                        properties:
+                          provider:
+                            type: string
+                        required:
+                        - provider
+                        type: object
+                      kubeProxy:
+                        properties:
+                          proxyMode:
+                            type: string
+                        required:
+                        - proxyMode
+                        type: object
+                      kubelet:
+                        properties:
+                          anonymousAuth:
+                            default: false
+                            type: boolean
+                          authenticationTokenWebhook:
+                            type: boolean
+                          authorizationMode:
+                            type: string
+                          podInfraContainerImage:
+                            type: string
+                          readOnlyPort:
+                            type: integer
+                        type: object
+                      kubernetesApiAccess:
+                        default:
+                        - 0.0.0.0/0
+                        items:
+                          type: string
+                        type: array
+                      kubernetesVersion:
+                        default: v1.29.6
+                        type: string
+                      metricsServer:
+                        description: MasterInternalName  string            `yaml:"masterInternalName,omitempty"
+                          json:"masterInternalName,omitempty"`
+                        properties:
+                          enabled:
+                            type: boolean
+                        required:
+                        - enabled
+                        type: object
+                      networkCIDR:
+                        type: string
+                      networkID:
+                        type: string
+                      networking:
+                        properties:
+                          calico:
+                            properties:
+                              version:
+                                type: string
+                            required:
+                            - version
+                            type: object
+                        type: object
+                      nonMasqueradeCIDR:
+                        type: string
+                      sshAccess:
+                        default:
+                        - 0.0.0.0/0
+                        items:
+                          type: string
+                        type: array
+                      subnets:
+                        items:
+                          properties:
+                            cidr:
+                              type: string
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            type:
+                              type: string
+                            zone:
+                              type: string
+                          required:
+                          - cidr
+                          - id
+                          - name
+                          - type
+                          - zone
+                          type: object
+                        type: array
+                      tagSubnets:
+                        type: boolean
+                      topology:
+                        properties:
+                          dns:
+                            properties:
+                              type:
+                                enum:
+                                - Private
+                                - Public
+                                type: string
+                            required:
+                            - type
+                            type: object
+                        required:
+                        - dns
+                        type: object
+                      updatePolicy:
+                        enum:
+                        - automatic
+                        - external
+                        type: string
+                    required:
+                    - etcdClusters
+                    - kubernetesVersion
+                    - networkCIDR
+                    - nonMasqueradeCIDR
+                    - subnets
+                    type: object
+                  instanceGroupSpecs:
+                    additionalProperties:
+                      properties:
+                        additionalSecurityGroups:
+                          items:
+                            type: string
+                          type: array
+                        cloudLabels:
+                          additionalProperties:
+                            type: string
+                          type: object
+                        image:
+                          type: string
+                        machineType:
+                          type: string
+                        maxSize:
+                          type: integer
+                        minSize:
+                          type: integer
+                        nodeLabels:
+                          additionalProperties:
+                            type: string
+                          type: object
+                        role:
+                          enum:
+                          - ControlPlane
+                          - Node
+                          - Master
+                          type: string
+                        rollingUpdate:
+                          properties:
+                            maxSurge:
+                              type: string
+                          required:
+                          - maxSurge
+                          type: object
+                        rootVolumeEncryption:
+                          type: boolean
+                        rootVolumeSize:
+                          type: integer
+                        subnets:
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - image
+                      - machineType
+                      - maxSize
+                      - minSize
+                      - role
+                      - rootVolumeEncryption
+                      - rootVolumeSize
+                      - subnets
+                      type: object
+                    type: object
                 type: object
               conditions:
                 description: Conditions of the resource.

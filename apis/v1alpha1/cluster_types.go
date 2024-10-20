@@ -82,26 +82,27 @@ type KopsClusterSpec struct {
 	Assets             AssetsSpec             `yaml:"assets,omitempty" json:"assets,omitempty"`
 	AdditionalPolicies AdditionalPoliciesSpec `yaml:"additionalPolicies,omitempty" json:"additionalPolicies,omitempty"`
 	API                APISpec                `yaml:"api,omitempty" json:"api,omitempty"`
-	Authorization      AuthorizationSpec      `yaml:"authorization,omitempty" json:"authorization,omitempty"`
+	Authorization      *AuthorizationSpec     `yaml:"authorization,omitempty" json:"authorization,omitempty"`
 	Channel            string                 `yaml:"channel,omitempty" json:"channel,omitempty"`
 	CloudLabels        map[string]string      `yaml:"cloudLabels,omitempty" json:"cloudLabels,omitempty"`
 	CloudProvider      string                 `yaml:"cloudProvider,omitempty" json:"cloudProvider,omitempty"`
 	ClusterAutoscaler  ClusterAutoscalerSpec  `yaml:"clusterAutoscaler,omitempty" json:"clusterAutoscaler,omitempty"`
 	ConfigBase         string                 `yaml:"configBase,omitempty" json:"configBase,omitempty"`
 	// +kubebuilder:validation:Enum=containerd
-	ContainerRuntime string `yaml:"containerRuntime,omitempty" json:"containerRuntime,omitempty"`
-	// Docker              DockerSpec        `yaml:"docker,omitempty" json:"docker,omitempty"`
-	EncryptionConfig    bool              `yaml:"encryptionConfig,omitempty" json:"encryptionConfig,omitempty"`
-	FileAssets          []FileAssetSpec   `yaml:"fileAssets,omitempty" json:"fileAssets,omitempty"`
-	Hooks               []HookSpec        `yaml:"hooks,omitempty" json:"hooks,omitempty"`
-	EtcdClusters        []EtcdClusterSpec `yaml:"etcdClusters" json:"etcdClusters"`
-	IAM                 IAMSpec           `yaml:"iam,omitempty" json:"iam,omitempty"`
-	KubeAPIServer       KubeAPIServerSpec `yaml:"kubeAPIServer,omitempty" json:"kubeAPIServer,omitempty"`
-	Kubelet             KubeletConfigSpec `yaml:"kubelet,omitempty" json:"kubelet,omitempty"`
-	KubeProxy           KubeProxySpec     `yaml:"kubeProxy,omitempty" json:"kubeProxy,omitempty"`
-	KubeDNS             KubeDNSSpec       `yaml:"kubeDNS,omitempty" json:"kubeDNS,omitempty"`
-	KubernetesApiAccess []string          `yaml:"kubernetesApiAccess,omitempty" json:"kubernetesApiAccess,omitempty"`
-	KubernetesVersion   string            `yaml:"kubernetesVersion" json:"kubernetesVersion"`
+	ContainerRuntime string            `yaml:"containerRuntime,omitempty" json:"containerRuntime,omitempty"`
+	EncryptionConfig bool              `yaml:"encryptionConfig,omitempty" json:"encryptionConfig,omitempty"`
+	FileAssets       []FileAssetSpec   `yaml:"fileAssets,omitempty" json:"fileAssets,omitempty"`
+	Hooks            []HookSpec        `yaml:"hooks,omitempty" json:"hooks,omitempty"`
+	EtcdClusters     []EtcdClusterSpec `yaml:"etcdClusters" json:"etcdClusters"`
+	IAM              IAMSpec           `yaml:"iam,omitempty" json:"iam,omitempty"`
+	KubeAPIServer    KubeAPIServerSpec `yaml:"kubeAPIServer,omitempty" json:"kubeAPIServer,omitempty"`
+	Kubelet          KubeletConfigSpec `yaml:"kubelet,omitempty" json:"kubelet,omitempty"`
+	KubeProxy        KubeProxySpec     `yaml:"kubeProxy,omitempty" json:"kubeProxy,omitempty"`
+	KubeDNS          KubeDNSSpec       `yaml:"kubeDNS,omitempty" json:"kubeDNS,omitempty"`
+	// +kubebuilder:default={"0.0.0.0/0"}
+	KubernetesApiAccess []string `yaml:"kubernetesApiAccess,omitempty" json:"kubernetesApiAccess,omitempty"`
+	// +kubebuilder:default="v1.29.6"
+	KubernetesVersion string `yaml:"kubernetesVersion" json:"kubernetesVersion"`
 	// MasterInternalName  string            `yaml:"masterInternalName,omitempty" json:"masterInternalName,omitempty"`
 	MetricsServer     MetricsServerSpec `yaml:"metricsServer,omitempty" json:"metricsServer,omitempty"`
 	CertManager       CertManagerSpec   `yaml:"certManager,omitempty" json:"certManager,omitempty"`
@@ -110,8 +111,9 @@ type KopsClusterSpec struct {
 	TagSubnets        bool              `yaml:"tagSubnets,omitempty" json:"tagSubnets,omitempty"`
 	Networking        NetworkingSpec    `yaml:"networking,omitempty" json:"networking,omitempty"`
 	NonMasqueradeCIDR string            `yaml:"nonMasqueradeCIDR" json:"nonMasqueradeCIDR"`
-	SSHAccess         []string          `yaml:"sshAccess,omitempty" json:"sshAccess,omitempty"`
-	Topology          TopologySpec      `yaml:"topology,omitempty" json:"topology,omitempty"`
+	// +kubebuilder:default={"0.0.0.0/0"}
+	SSHAccess []string     `yaml:"sshAccess,omitempty" json:"sshAccess,omitempty"`
+	Topology  TopologySpec `yaml:"topology,omitempty" json:"topology,omitempty"`
 	// +kubebuilder:validation:Enum=automatic;external
 	UpdatePolicy string       `yaml:"updatePolicy,omitempty" json:"updatePolicy,omitempty"`
 	Subnets      []SubnetSpec `yaml:"subnets" json:"subnets"`
@@ -151,10 +153,27 @@ type LoadBalancerSubnetSpec struct {
 }
 
 type AuthorizationSpec struct {
-	RBAC RBACAuthorizationSpec `yaml:"rbac" json:"rbac"`
+	AlwaysAllow *AlwaysAllowAuthorizationSpec `json:"alwaysAllow,omitempty"  yaml:"alwaysAllow,omitempty"`
+	RBAC        *RBACAuthorizationSpec        `json:"rbac,omitempty"         yaml:"rbac,omitempty"`
+}
+
+func (s *AuthorizationSpec) IsEmpty() bool {
+	return s.RBAC.IsEmpty() && s.AlwaysAllow.IsEmpty()
 }
 
 type RBACAuthorizationSpec struct{}
+
+func (s *RBACAuthorizationSpec) IsEmpty() bool {
+	return s == nil
+}
+
+type AlwaysAllowAuthorizationSpec struct{}
+
+func (s *AlwaysAllowAuthorizationSpec) IsEmpty() bool {
+	return s == nil
+}
+
+type AuthorizationStructSpec map[string]string
 
 type ClusterAutoscalerSpec struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
@@ -227,27 +246,29 @@ type IAMSpec struct {
 type KubeAPIServerSpec struct {
 	APIAudiences []string `yaml:"apiAudiences,omitempty"   json:"apiAudiences,omitempty"`
 	// +kubebuilder:default=/srv/kubernetes/ca.crt
-	ClientCAFile             string `yaml:"clientCAFile"             json:"clientCAFile"`
-	DisableBasicAuth         bool   `yaml:"disableBasicAuth"         json:"disableBasicAuth"`
-	OidcClientID             string `yaml:"oidcClientID"             json:"oidcClientID"`
-	OidcGroupsClaim          string `yaml:"oidcGroupsClaim"          json:"oidcGroupsClaim"`
-	OidcIssuerURL            string `yaml:"oidcIssuerURL"            json:"oidcIssuerURL"`
-	OidcUsernameClaim        string `yaml:"oidcUsernameClaim"        json:"oidcUsernameClaim"`
-	AuditLogMaxAge           int    `yaml:"auditLogMaxAge"           json:"auditLogMaxAge"`
-	AuditLogMaxBackups       int    `yaml:"auditLogMaxBackups"       json:"auditLogMaxBackups"`
-	AuditLogMaxSize          int    `yaml:"auditLogMaxSize"          json:"auditLogMaxSize"`
-	AuditLogPath             string `yaml:"auditLogPath"             json:"auditLogPath"`
-	AuditPolicyFile          string `yaml:"auditPolicyFile"          json:"auditPolicyFile"`
-	AuditWebhookBatchMaxWait string `yaml:"auditWebhookBatchMaxWait" json:"auditWebhookBatchMaxWait"`
-	AuditWebhookConfigFile   string `yaml:"auditWebhookConfigFile"   json:"auditWebhookConfigFile"`
+	ClientCAFile string `yaml:"clientCAFile,omitempty"             json:"clientCAFile,omitempty"`
+	// +kubebuilder:default=true
+	DisableBasicAuth         bool   `yaml:"disableBasicAuth,omitempty"         json:"disableBasicAuth,omitempty"`
+	OidcClientID             string `yaml:"oidcClientID,omitempty"             json:"oidcClientID,omitempty"`
+	OidcGroupsClaim          string `yaml:"oidcGroupsClaim,omitempty"          json:"oidcGroupsClaim,omitempty"`
+	OidcIssuerURL            string `yaml:"oidcIssuerURL,omitempty"            json:"oidcIssuerURL,omitempty"`
+	OidcUsernameClaim        string `yaml:"oidcUsernameClaim,omitempty"        json:"oidcUsernameClaim,omitempty"`
+	AuditLogMaxAge           int    `yaml:"auditLogMaxAge,omitempty"           json:"auditLogMaxAge,omitempty"`
+	AuditLogMaxBackups       int    `yaml:"auditLogMaxBackups,omitempty"       json:"auditLogMaxBackups,omitempty"`
+	AuditLogMaxSize          int    `yaml:"auditLogMaxSize,omitempty"          json:"auditLogMaxSize,omitempty"`
+	AuditLogPath             string `yaml:"auditLogPath,omitempty"             json:"auditLogPath,omitempty"`
+	AuditPolicyFile          string `yaml:"auditPolicyFile,omitempty"          json:"auditPolicyFile,omitempty"`
+	AuditWebhookBatchMaxWait string `yaml:"auditWebhookBatchMaxWait,omitempty" json:"auditWebhookBatchMaxWait,omitempty"`
+	AuditWebhookConfigFile   string `yaml:"auditWebhookConfigFile,omitempty"   json:"auditWebhookConfigFile,omitempty"`
 }
 
 type KubeletConfigSpec struct {
-	AnonymousAuth              bool   `yaml:"anonymousAuth"              json:"anonymousAuth"`
-	AuthenticationTokenWebhook bool   `yaml:"authenticationTokenWebhook" json:"authenticationTokenWebhook"`
-	AuthorizationMode          string `yaml:"authorizationMode"          json:"authorizationMode"`
-	ReadOnlyPort               int    `yaml:"readOnlyPort"               json:"readOnlyPort"`
-	PodInfraContainerImage     string `yaml:"podInfraContainerImage"     json:"podInfraContainerImage"`
+	// +kubebuilder:default=false
+	AnonymousAuth              bool   `yaml:"anonymousAuth,omitempty"              json:"anonymousAuth,omitempty"`
+	AuthenticationTokenWebhook bool   `yaml:"authenticationTokenWebhook,omitempty" json:"authenticationTokenWebhook,omitempty"`
+	AuthorizationMode          string `yaml:"authorizationMode,omitempty"          json:"authorizationMode,omitempty"`
+	ReadOnlyPort               int    `yaml:"readOnlyPort,omitempty"               json:"readOnlyPort,omitempty"`
+	PodInfraContainerImage     string `yaml:"podInfraContainerImage,omitempty"     json:"podInfraContainerImage,omitempty"`
 }
 
 type KubeProxySpec struct {
@@ -314,7 +335,7 @@ type KopsInstanceGroupSpec struct {
 	MaxSize                  int               `yaml:"maxSize" json:"maxSize"`
 	MinSize                  int               `yaml:"minSize" json:"minSize"`
 	NodeLabels               map[string]string `yaml:"nodeLabels,omitempty" json:"nodeLabels,omitempty"`
-	// +kubebuilder:validation:Enum=ControlPlane;Node
+	// +kubebuilder:validation:Enum=ControlPlane;Node;Master
 	Role                 InstanceGroupRole                  `yaml:"role" json:"role"`
 	RollingUpdate        RollingUpdateSpecInstanceGroupSpec `yaml:"rollingUpdate,omitempty" json:"rollingUpdate,omitempty"`
 	RootVolumeEncryption bool                               `yaml:"rootVolumeEncryption" json:"rootVolumeEncryption"`
@@ -379,7 +400,8 @@ type SecretValue struct {
 
 // ClusterObservation are the observable fields of a Cluster.
 type ClusterObservation struct {
-	ObservableField string `yaml:"observableField,omitempty" json:"observableField,omitempty"`
+	ClusterSpec        *KopsClusterSpec                  `json:"clusterSpec,omitempty"        yaml:"clusterSpec,omitempty"`
+	InstanceGroupSpecs map[string]*KopsInstanceGroupSpec `json:"instanceGroupSpecs,omitempty" yaml:"instanceGroupSpecs,omitempty"`
 }
 
 // A ClusterSpec defines the desired state of a Cluster.
@@ -391,10 +413,12 @@ type ClusterSpec struct {
 type StatusSpec string
 
 const (
-	Ready    StatusSpec = "Ready"
-	Creating StatusSpec = "Creating"
-	Deleting StatusSpec = "Deleting"
-	Updating StatusSpec = "Updating"
+	Ready       StatusSpec = "Ready"
+	Creating    StatusSpec = "Creating"
+	Progressing StatusSpec = "Progressing"
+	Deleting    StatusSpec = "Deleting"
+	Updating    StatusSpec = "Updating"
+	Unknown     StatusSpec = "Unknown"
 )
 
 // A ClusterStatus represents the observed state of a Cluster.
