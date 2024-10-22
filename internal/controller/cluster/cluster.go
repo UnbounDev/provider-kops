@@ -256,7 +256,6 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		output, err := c.service.validateCluster(ctx, cr, []string{})
 		if err != nil && strings.Contains(err.Error(), errNoAuth) {
 			if err := c.service.authenticateToCluster(ctx, cr, []string{}); err != nil {
-
 				mo.ResourceUpToDate = false
 				return mo, err
 			}
@@ -270,12 +269,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 				cr.Annotations[providerKopsCreateComplete] = ""
 			}
 
-			changelog, err := c.service.diffClusterV2(ctx, cr)
-			if err != nil {
-				log.Debug(fmt.Sprintf("Diff error detected: %s", err.Error()))
-				mo.ResourceUpToDate = false
-				return mo, err
-			}
+			changelog := c.service.diffClusterV2(ctx, cr)
 			if len(changelog) > 0 {
 				// set status to prompt update
 				cr.Status.Status = apisv1alpha1.Updating
@@ -395,7 +389,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 					log.Info(fmt.Sprintf("Post create keypair error: %s; %+v", err.Error(), err))
 				}
 			}
-			if err := c.service.createKeypair(bgCtx, cr, &kp, privateKeyData); err != nil {
+			if err := c.service.createKeypair(bgCtx, cr, kp, privateKeyData); err != nil {
 				log.Info(fmt.Sprintf("Post create keypair error: %s; %+v", err.Error(), err))
 			}
 		}
@@ -404,7 +398,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 			if err != nil {
 				log.Info(fmt.Sprintf("Post create secret error: %s; %+v", err.Error(), err))
 			} else {
-				if err := c.service.createSecret(bgCtx, cr, &secret, secretData); err != nil {
+				if err := c.service.createSecret(bgCtx, cr, secret, secretData); err != nil {
 					log.Info(fmt.Sprintf("Post create secret error: %s; %+v", err.Error(), err))
 				}
 			}

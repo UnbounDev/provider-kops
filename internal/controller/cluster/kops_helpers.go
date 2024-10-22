@@ -160,32 +160,38 @@ func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) erro
 	return nil
 }
 
-func (k *kopsClient) createKeypair(_ context.Context, cr *v1alpha1.Cluster, kp *v1alpha1.KeypairSpec, privateKeyData []byte) error {
+func (k *kopsClient) createKeypair(_ context.Context, cr *v1alpha1.Cluster, kp v1alpha1.KeypairSpec, privateKeyData []byte) error {
 	args := []string{}
 	if kp.Primary {
 		args = append(args, "--primary=true")
 	}
+
+	kpFile, err := os.CreateTemp(tmpDir, "*.crt")
+	if err != nil {
+		return err
+	}
+	pkFile, err := os.CreateTemp(tmpDir, "*.pem")
+	if err != nil {
+		return err
+	}
+
 	if kp.Cert != nil {
-		f, err := os.CreateTemp(tmpDir, "*.crt")
-		if err != nil {
+		if _, err := kpFile.WriteString(*kp.Cert); err != nil {
 			return err
 		}
-		if _, err := f.WriteString(*kp.Cert); err != nil {
+		if err := kpFile.Close(); err != nil {
 			return err
 		}
-		args = append(args, fmt.Sprintf("--cert=%s", f.Name()))
-		deferRemove(f)
+		args = append(args, fmt.Sprintf("--cert=%s", kpFile.Name()))
 	}
 	if len(privateKeyData) > 0 {
-		f, err := os.CreateTemp(tmpDir, "*.pem")
-		if err != nil {
+		if _, err = pkFile.Write(privateKeyData); err != nil {
 			return err
 		}
-		if _, err = f.Write(privateKeyData); err != nil {
+		if err := pkFile.Close(); err != nil {
 			return err
 		}
-		args = append(args, fmt.Sprintf("--key=%s", f.Name()))
-		deferRemove(f)
+		args = append(args, fmt.Sprintf("--key=%s", pkFile.Name()))
 	}
 	//nolint:gosec
 	cmd := exec.Command(
@@ -206,20 +212,22 @@ func (k *kopsClient) createKeypair(_ context.Context, cr *v1alpha1.Cluster, kp *
 		log.Debug(string(output))
 	}
 
+	deferRemove(kpFile)
+	deferRemove(pkFile)
 	return nil
 }
 
-func (k *kopsClient) createSecret(_ context.Context, cr *v1alpha1.Cluster, secret *v1alpha1.SecretSpec, secretData []byte) error {
+func (k *kopsClient) createSecret(_ context.Context, cr *v1alpha1.Cluster, secret v1alpha1.SecretSpec, secretData []byte) error {
 	args := []string{}
-	var f *os.File
-	var err error
+	f, err := os.CreateTemp(tmpDir, fmt.Sprintf("%s_*.secret", secret.Kind))
 	if len(secretData) > 0 {
-		f, err = os.CreateTemp(tmpDir, fmt.Sprintf("%s_*.secret", secret.Kind))
 		if err != nil {
 			return err
 		}
-		_, err = f.Write(secretData)
-		if err != nil {
+		if _, err = f.Write(secretData); err != nil {
+			return err
+		}
+		if err = f.Close(); err != nil {
 			return err
 		}
 		args = append(args, fmt.Sprintf("--filename=%s", f.Name()))
@@ -321,7 +329,7 @@ func (k *kopsClient) validateCluster(ctx context.Context, cr *v1alpha1.Cluster, 
 
 }
 
-func (k *kopsClient) diffClusterV2(ctx context.Context, cr *v1alpha1.Cluster) ([]observedDelta, error) {
+func (k *kopsClient) diffClusterV2(_ context.Context, cr *v1alpha1.Cluster) []observedDelta {
 	clusterYaml, igYamls := buildKopsYamlStructs(cr)
 	changes := []observedDelta{}
 
@@ -352,7 +360,7 @@ func (k *kopsClient) diffClusterV2(ctx context.Context, cr *v1alpha1.Cluster) ([
 		}
 	}
 
-	return changes, nil
+	return changes
 }
 
 func (k *kopsClient) updateCluster(ctx context.Context, cr *v1alpha1.Cluster) error {

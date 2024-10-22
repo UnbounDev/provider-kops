@@ -84,6 +84,8 @@ spec:
               value: "6000000000"
         name: events
       kubernetesVersion: v1.29.6
+      kubelet:
+        anonymousAuth: false
       networkCIDR: yourVpcNetworkCidr
       networkID: yourVpcId
       nonMasqueradeCIDR: 100.64.0.0/10
