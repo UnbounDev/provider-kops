@@ -44,7 +44,7 @@ func (k *kopsClient) observeCluster(ctx context.Context, cr *apisv1alpha1.Cluste
 		}
 
 		output := stdOut.Bytes()
-		log.Debug(string(output))
+		// log.Debug(string(output))
 
 		if err := yaml.Unmarshal(output, clusterYaml); err != nil {
 			return &apisv1alpha1.KopsClusterSpec{}, instanceGroupSpecMap, errors.Wrapf(err, "fucked that")
@@ -72,7 +72,7 @@ func (k *kopsClient) observeCluster(ctx context.Context, cr *apisv1alpha1.Cluste
 			return &apisv1alpha1.KopsClusterSpec{}, instanceGroupSpecMap, errors.Wrapf(err, "cmd: %s; stderr: %s; stdout: %s", cmd.String(), stdErr.String(), stdOut.String())
 		}
 		output := stdOut.Bytes()
-		log.Debug(string(output))
+		// log.Debug(string(output))
 
 		instanceGroupYamls := []*instanceGroupYaml{}
 		dec := yaml.NewDecoder(bytes.NewReader(output))
@@ -170,24 +170,22 @@ func (k *kopsClient) createKeypair(_ context.Context, cr *v1alpha1.Cluster, kp *
 		if err != nil {
 			return err
 		}
-		_, err = f.Write([]byte(*kp.Cert))
-		if err != nil {
+		if _, err := f.WriteString(*kp.Cert); err != nil {
 			return err
 		}
 		args = append(args, fmt.Sprintf("--cert=%s", f.Name()))
-		defer os.Remove(f.Name())
+		deferRemove(f)
 	}
 	if len(privateKeyData) > 0 {
 		f, err := os.CreateTemp(tmpDir, "*.pem")
 		if err != nil {
 			return err
 		}
-		_, err = f.Write(privateKeyData)
-		if err != nil {
+		if _, err = f.Write(privateKeyData); err != nil {
 			return err
 		}
 		args = append(args, fmt.Sprintf("--key=%s", f.Name()))
-		defer os.Remove(f.Name())
+		deferRemove(f)
 	}
 	//nolint:gosec
 	cmd := exec.Command(
@@ -213,8 +211,10 @@ func (k *kopsClient) createKeypair(_ context.Context, cr *v1alpha1.Cluster, kp *
 
 func (k *kopsClient) createSecret(_ context.Context, cr *v1alpha1.Cluster, secret *v1alpha1.SecretSpec, secretData []byte) error {
 	args := []string{}
+	var f *os.File
+	var err error
 	if len(secretData) > 0 {
-		f, err := os.CreateTemp(tmpDir, fmt.Sprintf("%s_*.secret", secret.Kind))
+		f, err = os.CreateTemp(tmpDir, fmt.Sprintf("%s_*.secret", secret.Kind))
 		if err != nil {
 			return err
 		}
@@ -223,7 +223,6 @@ func (k *kopsClient) createSecret(_ context.Context, cr *v1alpha1.Cluster, secre
 			return err
 		}
 		args = append(args, fmt.Sprintf("--filename=%s", f.Name()))
-		defer os.Remove(f.Name())
 	}
 	//nolint:gosec
 	cmd := exec.Command(
@@ -244,6 +243,7 @@ func (k *kopsClient) createSecret(_ context.Context, cr *v1alpha1.Cluster, secre
 		log.Debug(string(output))
 	}
 
+	deferRemove(f)
 	return nil
 }
 
@@ -262,6 +262,8 @@ func (k *kopsClient) authenticateToCluster(ctx context.Context, cr *v1alpha1.Clu
 	)
 	cmd.Args = append(cmd.Args, extraArgs...)
 	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
+
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
 	} else {
@@ -290,13 +292,15 @@ func (k *kopsClient) validateCluster(ctx context.Context, cr *v1alpha1.Cluster, 
 	)
 	cmd.Args = append(cmd.Args, extraArgs...)
 	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
+
 	cmd.Stdout = &stdOut
 	cmd.Stderr = &stdErr
 	err := cmd.Run()
 	output := stdOut.Bytes()
 	errString := stdErr.String()
 
-	log.Debug(string(output))
+	// log.Debug(string(output))
 
 	if err != nil {
 		if strings.Contains(errString, "error listing nodes: Unauthorized") {
@@ -318,18 +322,15 @@ func (k *kopsClient) validateCluster(ctx context.Context, cr *v1alpha1.Cluster, 
 }
 
 func (k *kopsClient) diffClusterV2(ctx context.Context, cr *v1alpha1.Cluster) ([]observedDelta, error) {
-	clusterYaml, igYamls, err := buildKopsYamlStructs(cr)
+	clusterYaml, igYamls := buildKopsYamlStructs(cr)
 	changes := []observedDelta{}
-	if err != nil {
-		return changes, err
-	}
 
 	if !cmp.Equal(cr.Status.AtProvider.ClusterSpec, &clusterYaml.Spec) {
 		diff := cmp.Diff(cr.Status.AtProvider.ClusterSpec, &clusterYaml.Spec)
 		log.Info(diff)
 		changes = append(changes, observedDelta{
-			Operation: observedDeltaOperation(updateDelta),
-			Resource:  observedDeltaResource(cluster),
+			Operation: updateDelta,
+			Resource:  cluster,
 			Diff:      diff,
 		})
 	}
@@ -338,18 +339,16 @@ func (k *kopsClient) diffClusterV2(ctx context.Context, cr *v1alpha1.Cluster) ([
 		igSource := cr.Status.AtProvider.InstanceGroupSpecs[igDesired.Metadata.Name]
 		if igSource == nil {
 			changes = append(changes, observedDelta{
-				Operation: observedDeltaOperation(createDelta),
-				Resource:  observedDeltaResource(instanceGroup),
+				Operation: createDelta,
+				Resource:  instanceGroup,
 			})
-		} else {
-			if !cmp.Equal(igSource, &igDesired.Spec) {
-				diff := cmp.Diff(igSource, &igDesired.Spec)
-				changes = append(changes, observedDelta{
-					Operation: observedDeltaOperation(updateDelta),
-					Resource:  observedDeltaResource(instanceGroup),
-					Diff:      diff,
-				})
-			}
+		} else if !cmp.Equal(igSource, &igDesired.Spec) {
+			diff := cmp.Diff(igSource, &igDesired.Spec)
+			changes = append(changes, observedDelta{
+				Operation: updateDelta,
+				Resource:  instanceGroup,
+				Diff:      diff,
+			})
 		}
 	}
 
@@ -420,6 +419,7 @@ func (k *kopsClient) updateCluster(ctx context.Context, cr *v1alpha1.Cluster) er
 		"--yes",
 	)
 	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
 
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
@@ -498,6 +498,7 @@ func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *v1alpha1.Clus
 		"--yes",
 	)
 	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
 
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))

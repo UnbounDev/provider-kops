@@ -222,7 +222,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		ConnectionDetails: managed.ConnectionDetails{},
 	}
 
-	log.Debug(fmt.Sprintf("Observing: %+v", cr))
+	// log.Debug(fmt.Sprintf("Observing: %+v", cr))
 
 	cluster, igs, err := c.service.observeCluster(ctx, cr)
 	if err != nil {
@@ -264,6 +264,11 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 		if len(output.Failures) == 0 && err == nil {
 			cr.Status.Status = apisv1alpha1.Ready
+
+			// catch the case where the resource pre-exists and was simply discovered
+			if !resourceCreated {
+				cr.Annotations[providerKopsCreateComplete] = ""
+			}
 
 			changelog, err := c.service.diffClusterV2(ctx, cr)
 			if err != nil {
@@ -316,6 +321,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		// a user needs to manually intervene and fix the cluster state
 		// before the controller can resume management
 		cr.SetConditions(xpv1.Unavailable())
+	case apisv1alpha1.Unknown:
 	default:
 		mo.ResourceUpToDate = false
 		cr.Status.Status = apisv1alpha1.Unknown
@@ -364,7 +370,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	log.Info(fmt.Sprintf("Begin creating: %s", cr.Name))
-	log.Debug(fmt.Sprintf("%+v", cr))
+	// uncomment for super verbose debugging... log.Debug(fmt.Sprintf("%+v", cr))
 
 	// don't block when updating the cluster, this takes a while..
 	go func() {
@@ -476,11 +482,10 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	// don't block when updating the cluster, this takes a while..
 	go func() {
 		bgCtx := context.Background()
+
 		if err := c.service.updateCluster(bgCtx, cr); err != nil {
 			log.Info(fmt.Sprintf("UPDATE ERROR: %s; %+v", err.Error(), err))
-		}
-
-		if err := c.service.rollingUpdateCluster(ctx, cr); err != nil {
+		} else if err := c.service.rollingUpdateCluster(bgCtx, cr); err != nil {
 			log.Info(fmt.Sprintf("ROLLING UPDATE ERROR: %s; %+v", err.Error(), err))
 		}
 

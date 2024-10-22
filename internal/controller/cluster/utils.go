@@ -47,13 +47,6 @@ type kopsValidationNodeSpec struct {
 	Status   string `json:"status"`
 }
 
-type diffChangelogSpec struct {
-	Type string      `json:"type"`
-	Path []string    `json:"path"`
-	From interface{} `json:"from"`
-	To   interface{} `json:"to"`
-}
-
 type clusterYaml struct {
 	ApiVersion string                           `yaml:"apiVersion" json:"apiVersion"`
 	Kind       string                           `yaml:"kind" json:"kind"`
@@ -137,7 +130,7 @@ func modifyInstanceGroupYaml(cr *apisv1alpha1.Cluster, ig *apisv1alpha1.Instance
 	}
 }
 
-func buildKopsYamlStructs(cr *apisv1alpha1.Cluster) (clusterYaml, []instanceGroupYaml, error) {
+func buildKopsYamlStructs(cr *apisv1alpha1.Cluster) (clusterYaml, []instanceGroupYaml) {
 
 	clusterYaml := clusterYaml{
 		ApiVersion: "kops.k8s.io/v1alpha2",
@@ -166,7 +159,7 @@ func buildKopsYamlStructs(cr *apisv1alpha1.Cluster) (clusterYaml, []instanceGrou
 		instanceGroupYamls = append(instanceGroupYamls, instanceGroupYaml)
 	}
 
-	return clusterYaml, instanceGroupYamls, nil
+	return clusterYaml, instanceGroupYamls
 }
 
 func getKubeConfigFilePath(cr *apisv1alpha1.Cluster) string {
@@ -223,37 +216,41 @@ func writeBlockToFile(f *os.File, b []byte) error {
 	return nil
 }
 
-func deferClose(f *os.File) {
+func deferRemove(f *os.File) {
 	defer func() {
 		if err := f.Close(); err != nil {
-			fmt.Printf("\n%+v\n", err)
+			log.Debug(fmt.Sprintf("Error closing file %s; err: %+v", f.Name(), err))
+		}
+		if err := os.Remove(f.Name()); err != nil {
+			log.Debug(fmt.Sprintf("Error removing file %s; err: %+v", f.Name(), err))
 		}
 	}()
 }
 
 func writeKopsYamlFile(cr *apisv1alpha1.Cluster, pubSshKey string, fileSuffix string) error {
 
-	clusterYaml, instanceGroupYamls, err := buildKopsYamlStructs(cr)
-	if err != nil {
-		return err
-	}
+	clusterYaml, instanceGroupYamls := buildKopsYamlStructs(cr)
 
-	fC, err := os.Create(getKopsClusterFilename(cr, fileSuffix))
-	if err != nil {
-		return err
-	}
-	defer fC.Close()
-	// deferClose(fC)
+	{
+		fC, err := os.Create(getKopsClusterFilename(cr, fileSuffix))
+		if err != nil {
+			return err
+		}
 
-	b, err := yaml.Marshal(&clusterYaml)
-	if err != nil {
-		return err
-	}
-	if err := writeBlockToFile(fC, b); err != nil {
-		return err
-	}
-	if err := fC.Sync(); err != nil {
-		return err
+		b, err := yaml.Marshal(&clusterYaml)
+		if err != nil {
+			return err
+		}
+		if err := writeBlockToFile(fC, b); err != nil {
+			return err
+		}
+		if err := fC.Sync(); err != nil {
+			return err
+		}
+
+		if err := fC.Close(); err != nil {
+			return err
+		}
 	}
 
 	for i := range cr.Spec.ForProvider.InstanceGroups {
@@ -264,10 +261,8 @@ func writeKopsYamlFile(cr *apisv1alpha1.Cluster, pubSshKey string, fileSuffix st
 		if err != nil {
 			return err
 		}
-		defer fIg.Close()
-		// deferClose(fIg)
 
-		b, err = yaml.Marshal(&igy)
+		b, err := yaml.Marshal(&igy)
 		if err != nil {
 			return err
 		}
@@ -277,19 +272,26 @@ func writeKopsYamlFile(cr *apisv1alpha1.Cluster, pubSshKey string, fileSuffix st
 		if err := fIg.Sync(); err != nil {
 			return err
 		}
+
+		if err := fIg.Close(); err != nil {
+			return err
+		}
 	}
 
-	fS, err := os.Create(getKopsClusterPubSshKeyFilename(cr, fileSuffix))
-	if err != nil {
-		return err
-	}
-	defer fS.Close()
-	// deferClose(fS)
-	if _, err := fS.WriteString(pubSshKey); err != nil {
-		return err
-	}
-	if err := fS.Sync(); err != nil {
-		return err
+	{
+		fS, err := os.Create(getKopsClusterPubSshKeyFilename(cr, fileSuffix))
+		if err != nil {
+			return err
+		}
+		if _, err := fS.WriteString(pubSshKey); err != nil {
+			return err
+		}
+		if err := fS.Sync(); err != nil {
+			return err
+		}
+		if err := fS.Close(); err != nil {
+			return err
+		}
 	}
 
 	return nil
