@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	errNoAuth = "k8s creds are invalid"
+	errNoAuth         = "k8s creds are invalid"
+	errKopsValidation = "kops validation failed"
 
 	fileSuffixCreate  = "create"
 	fileSuffixObserve = "observe"

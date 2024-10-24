@@ -106,12 +106,13 @@ func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) erro
 	cmd := exec.Command(
 		"kops",
 		"create",
-		"-v5",
 		fmt.Sprintf("-f%s", getKopsClusterFilename(cr, fileSuffix)),
 		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 	)
 	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
+
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
 	} else {
@@ -123,13 +124,14 @@ func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) erro
 	cmd = exec.Command(
 		"kops",
 		"create",
-		"-v5",
 		"sshpublickey",
 		fmt.Sprintf("-i%s", getKopsClusterPubSshKeyFilename(cr, fileSuffix)),
 		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 	)
 	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
+
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
 	} else {
@@ -142,12 +144,12 @@ func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) erro
 		cmd := exec.Command(
 			"kops",
 			"create",
-			"-v5",
 			fmt.Sprintf("-f%s", getKopsInstanceGroupFilename(cr, &ig, fileSuffix)),
 			fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
 			fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 		)
 		cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+		log.Info(fmt.Sprintf("run: %s", cmd.String()))
 
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return errors.Wrap(err, string(output))
@@ -198,13 +200,13 @@ func (k *kopsClient) createKeypair(_ context.Context, cr *v1alpha1.Cluster, kp v
 		"kops",
 		"create",
 		"keypair",
-		"-v5",
 		kp.Keypair,
 		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 	)
 	cmd.Args = append(cmd.Args, args...)
 	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
 
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
@@ -237,13 +239,13 @@ func (k *kopsClient) createSecret(_ context.Context, cr *v1alpha1.Cluster, secre
 		"kops",
 		"create",
 		"secret",
-		"-v5",
 		secret.Kind,
 		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 	)
 	cmd.Args = append(cmd.Args, args...)
 	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
 
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
@@ -264,7 +266,6 @@ func (k *kopsClient) authenticateToCluster(ctx context.Context, cr *v1alpha1.Clu
 		"export",
 		"kubecfg",
 		"--admin",
-		"-v5",
 		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 	)
