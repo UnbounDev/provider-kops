@@ -293,6 +293,10 @@ spec:
                             type: string
                           auditWebhookConfigFile:
                             type: string
+                          authorizationMode:
+                            type: string
+                          authorizationRBACSuperUser:
+                            type: string
                           clientCAFile:
                             default: /srv/kubernetes/ca.crt
                             type: string
@@ -1089,6 +1093,10 @@ spec:
                           auditWebhookBatchMaxWait:
                             type: string
                           auditWebhookConfigFile:
+                            type: string
+                          authorizationMode:
+                            type: string
+                          authorizationRBACSuperUser:
                             type: string
                           clientCAFile:
                             default: /srv/kubernetes/ca.crt

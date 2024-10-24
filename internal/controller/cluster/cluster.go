@@ -274,6 +274,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 				// set status to prompt update
 				cr.Status.Status = apisv1alpha1.Updating
 				mo.ResourceUpToDate = false
+				err = errors.Errorf("%s; %+v", errKopsValidation, changelog)
 				for _, change := range changelog {
 					if changeJson, err := json.Marshal(change); err != nil {
 						log.Debug(fmt.Sprintf("Change detected: %s", changeJson))
@@ -298,6 +299,8 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	switch cr.Status.Status {
 	case apisv1alpha1.Creating:
+		// wipe error to allow creation..
+		err = nil
 		mo.ResourceExists = false
 		cr.SetConditions(xpv1.Creating())
 	case apisv1alpha1.Deleting:
@@ -322,7 +325,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		cr.SetConditions(xpv1.Unavailable())
 	}
 
-	return mo, nil
+	return mo, err
 }
 
 // Create "creates" the k8s cluster and instance groups and initial secrets based on cr parameters,

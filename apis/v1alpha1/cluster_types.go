@@ -244,7 +244,9 @@ type IAMSpec struct {
 }
 
 type KubeAPIServerSpec struct {
-	APIAudiences []string `yaml:"apiAudiences,omitempty"   json:"apiAudiences,omitempty"`
+	APIAudiences               []string `yaml:"apiAudiences,omitempty"   json:"apiAudiences,omitempty"`
+	AuthorizationMode          *string  `yaml:"authorizationMode,omitempty" json:"authorizationMode,omitempty"`
+	AuthorizationRBACSuperUser *string  `yaml:"authorizationRBACSuperUser,omitempty" json:"authorizationRBACSuperUser,omitempty"`
 	// +kubebuilder:default=/srv/kubernetes/ca.crt
 	ClientCAFile string `yaml:"clientCAFile,omitempty"             json:"clientCAFile,omitempty"`
 	// +kubebuilder:default=true

@@ -3,7 +3,7 @@ kind: Cluster
 metadata:
   labels:
     kops: xplane-kops
-  name: simple-xplane-kops.k8s.local
+  name: complex-xplane-kops.k8s.local
 spec:
   forProvider:
     cluster:
@@ -16,7 +16,7 @@ spec:
           - name: ext-2
           type: Public
       authorization:
-        alwaysAllow: {}
+        rbac: {}
       cloudLabels:
         Careers: xplane-kops
       cloudProvider: aws
@@ -81,11 +81,70 @@ spec:
           - name: ETCD_QUOTA_BACKEND_BYTES
             value: "6000000000"
         name: events
+      fileAssets:
+      - content: |
+          apiVersion: audit.k8s.io/v1
+          kind: Policy
+          rules:
+          # A catch-all rule to log all other requests at the Metadata level.
+          - level: Metadata
+            # Long-running requests like watches that fall under this rule will not
+            # generate an audit event in RequestReceived.
+            omitStages:
+              - "RequestReceived"
+        name: apiserver-audit-policy
+        path: /srv/kubernetes/kube-apiserver/audit-policy.yaml
+        roles:
+        - ControlPlane
+      - content: |
+          apiVersion: v1
+          kind: Config
+          clusters:
+            - name: cluster
+              cluster:
+                server: http://api.internal.azq-beta-simple-xplane-kops.k8s.local:30007/k8s-audit
+          contexts:
+            - context:
+                cluster: cluster
+                user: ""
+              name: default-context
+          current-context: default-context
+          preferences: {}
+          users: []
+        name: webhook-config
+        path: /srv/kubernetes/kube-apiserver/webhook-config.yaml
+        roles:
+        - ControlPlane
+      kubeAPIServer:
+        apiAudiences:
+        - api
+        - istio-ca
+        auditLogMaxAge: 10
+        auditLogMaxBackups: 1
+        auditLogMaxSize: 100
+        auditLogPath: /var/log/kubernetes/kube-apiserver-auditlogs.log
+        auditPolicyFile: /srv/kubernetes/kube-apiserver/audit-policy.yaml
+        auditWebhookBatchMaxWait: 5s
+        auditWebhookConfigFile: /srv/kubernetes/kube-apiserver/webhook-config.yaml
+        authorizationMode: Node,RBAC
+        clientCAFile: /srv/kubernetes/ca.crt
+        disableBasicAuth: true
+        oidcClientID: yourClientID
+        oidcGroupsClaim: groups
+        oidcIssuerURL: https://yourOidcIssuerUrl
+        oidcUsernameClaim: email
+      kubeDNS:
+        provider: CoreDNS
+      kubeProxy:
+        proxyMode: ipvs
       kubelet:
         anonymousAuth: false
       kubernetesVersion: v1.29.6
       networkCIDR: yourVpcNetworkCidr
       networkID: yourVpcId
+      networking:
+        calico:
+          version: v3.28.2
       nonMasqueradeCIDR: 100.64.0.0/10
       sshAccess:
       - 0.0.0.0/0
@@ -170,6 +229,13 @@ spec:
         - cluster-0
         - cluster-1
         - cluster-2
+    keypairs:
+    - cert: |
+        -----BEGIN CERTIFICATE-----
+        yourCert
+        -----END CERTIFICATE-----
+      keypair: kubernetes-ca
+      primary: false
     rollingUpdateOpts:
       cloudOnly: true
       validateCount: 0
@@ -177,5 +243,5 @@ spec:
   providerConfigRef:
     name: aws-write
   writeConnectionSecretToRef:
-    name: simple-xplane-kops
+    name: complex-xplane-kops
     namespace: default

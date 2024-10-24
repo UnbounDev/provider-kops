@@ -1,0 +1,141 @@
+
+#kind: Kustomization
+
+namePrefix: complex-
+
+resources:
+- ./../../base-simple
+
+configurations:
+- kustomizeconfig/clusterType.yaml
+
+images:
+- name: ami
+  newName: ami-0a0e5d9c7acc336f1
+
+patches:
+- target:
+    kind: Cluster
+  patch: |-
+    - op: replace
+      path: /spec/forProvider/cluster/authorization
+      value: {"rbac": {}}
+- target:
+    kind: Cluster
+  patch: |-
+    apiVersion: kops.crossplane.io/v1alpha1
+    kind: Cluster
+    metadata:
+      # name not used; ref https://kubectl.docs.kubernetes.io/references/kustomize/kustomization/patches/#patch-using-inline-strategic-merge
+      name: not-used
+      labels:
+        kops: xplane-kops
+    spec:
+      forProvider:
+        state: s3://your-bucket
+        cluster:
+          authorization:
+            rbac: {}
+          kubernetesVersion: v1.29.6
+          networkCIDR: yourVpcNetworkCidr
+          networkID: yourVpcId
+          networking:
+            calico:
+              version: v3.28.2
+          kubeAPIServer:
+            apiAudiences:
+            - api
+            - istio-ca
+            authorizationMode: Node,RBAC
+            auditLogMaxAge: 10
+            auditLogMaxBackups: 1
+            auditLogMaxSize: 100
+            auditLogPath: /var/log/kubernetes/kube-apiserver-auditlogs.log
+            auditPolicyFile: /srv/kubernetes/kube-apiserver/audit-policy.yaml
+            auditWebhookBatchMaxWait: 5s
+            auditWebhookConfigFile: /srv/kubernetes/kube-apiserver/webhook-config.yaml
+            clientCAFile: /srv/kubernetes/ca.crt
+            disableBasicAuth: true
+            oidcClientID: yourClientID
+            oidcGroupsClaim: groups
+            oidcIssuerURL: https://yourOidcIssuerUrl
+            oidcUsernameClaim: email
+          kubeDNS:
+            provider: CoreDNS
+          kubeProxy:
+            proxyMode: ipvs
+          subnets:
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: ext-0
+            type: Utility
+            zone: yourSubnetRegion
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: ext-1
+            type: Utility
+            zone: yourSubnetRegion
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: ext-2
+            type: Utility
+            zone: yourSubnetRegion
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: cluster-0
+            type: Private
+            zone: yourSubnetRegion
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: cluster-1
+            type: Private
+            zone: yourSubnetRegion
+          - cidr: yourSubnetCidr
+            id: yourSubnetId
+            name: cluster-2
+            type: Private
+            zone: yourSubnetRegion
+          fileAssets:
+          - content: |
+              apiVersion: audit.k8s.io/v1
+              kind: Policy
+              rules:
+              # A catch-all rule to log all other requests at the Metadata level.
+              - level: Metadata
+                # Long-running requests like watches that fall under this rule will not
+                # generate an audit event in RequestReceived.
+                omitStages:
+                  - "RequestReceived"
+            name: apiserver-audit-policy
+            path: /srv/kubernetes/kube-apiserver/audit-policy.yaml
+            roles:
+            - ControlPlane
+          - content: |
+              apiVersion: v1
+              kind: Config
+              clusters:
+                - name: cluster
+                  cluster:
+                    server: http://api.internal.azq-beta-simple-xplane-kops.k8s.local:30007/k8s-audit
+              contexts:
+                - context:
+                    cluster: cluster
+                    user: ""
+                  name: default-context
+              current-context: default-context
+              preferences: {}
+              users: []
+            name: webhook-config
+            path: /srv/kubernetes/kube-apiserver/webhook-config.yaml
+            roles:
+            - ControlPlane
+        keypairs:
+        - keypair: kubernetes-ca
+          cert: |
+            -----BEGIN CERTIFICATE-----
+            yourCert
+            -----END CERTIFICATE-----
+          primary: false
+      writeConnectionSecretToRef:
+        name: complex-xplane-kops
+        namespace: default
