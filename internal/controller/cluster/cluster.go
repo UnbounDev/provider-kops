@@ -60,6 +60,7 @@ const (
 
 	providerKopsCreatePending        = "provider-kops.io/external-create-pending"
 	providerKopsCreateComplete       = "provider-kops.io/external-create-complete"
+	providerKopsCreateFail           = "provider-kops.io/external-create-fail"
 	providerKopsReconcilePending     = "provider-kops.io/external-reconcile-pending"
 	providerKopsRollingUpdatePending = "provider-kops.io/external-rolling-update-pending"
 	providerKopsTriggerUpdate        = "provider-kops.io/external-update-trigger"
@@ -224,7 +225,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	// log.Debug(fmt.Sprintf("Observing: %+v", cr))
 
-	cluster, igs, err := c.service.observeCluster(ctx, cr)
+	cluster, igs, secrets, err := c.service.observeCluster(ctx, cr)
 	if err != nil {
 		log.Debug(fmt.Sprintf("cluster not found: %s", err.Error()))
 		if strings.Contains(err.Error(), "not found") {
@@ -238,6 +239,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 		cr.Status.AtProvider.ClusterSpec = cluster
 		cr.Status.AtProvider.InstanceGroupSpecs = igs
+		cr.Status.AtProvider.Secrets = secrets
 		connDetails, _ := getClusterConnectionDetails(cr)
 		mo.ConnectionDetails = connDetails
 
@@ -252,10 +254,13 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 			cr.Status.Status = apisv1alpha1.Progressing
 		}
 
+		// compute any diff
+		changelog := c.service.diffClusterV2(ctx, cr)
+
 		// now run validation w/ fallback for authentication to the cluster
 		output, err := c.service.validateCluster(ctx, cr, []string{})
 		if err != nil && strings.Contains(err.Error(), errNoAuth) {
-			if err := c.service.authenticateToCluster(ctx, cr, []string{}); err != nil {
+			if err := c.service.kopsExportKubecfgAdmin(ctx, cr, []string{}); err != nil {
 				mo.ResourceUpToDate = false
 				return mo, err
 			}
@@ -269,7 +274,6 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 				cr.Annotations[providerKopsCreateComplete] = ""
 			}
 
-			changelog := c.service.diffClusterV2(ctx, cr)
 			if len(changelog) > 0 {
 				// set status to prompt update
 				cr.Status.Status = apisv1alpha1.Updating
@@ -292,7 +296,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 				// TODO: it'd be really nice to include the validation errors in the xplane condition reason..
 			} else {
 				// TODO: in this case we need to determine if there are any _ongoing_ operations for this cluster
-				log.Info(fmt.Sprintf("Cluster validation errors for %s: %s; %s", cr.Name, err.Error(), output))
+				log.Info(fmt.Sprintf("Cluster validation errors for %s: %s; %s; observed delta: %+v", cr.Name, err.Error(), output, changelog))
 			}
 		}
 	}
@@ -349,6 +353,12 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, errors.New(errNotCluster)
 	}
 
+	oneShotError := `
+	  Oneshot cluster creation attempt failed, very likely there is a configuration or environment
+	  issue that is preventing the cluster from correctly initializing.
+
+	  Please inspect the associated error, fix the issue, and delete/recreate the cluster.
+	`
 	connDetails := managed.ConnectionDetails{
 		"kubeconfig": []byte{},
 	}
@@ -363,68 +373,67 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return mo, nil
 	}
 	if err := c.lockCluster(ctx, cr, []string{providerKopsCreatePending, providerKopsUpdateLocked}); err != nil {
-		return mo, err
+		return mo, errors.Wrap(err, oneShotError)
 	}
 
 	log.Info(fmt.Sprintf("Begin creating: %s", cr.Name))
 	// uncomment for super verbose debugging... log.Debug(fmt.Sprintf("%+v", cr))
 
-	// don't block when updating the cluster, this takes a while..
-	go func() {
+	runCreate := func() error {
+
 		bgCtx := context.Background()
 		if err := c.service.createCluster(bgCtx, cr); err != nil {
-			log.Info(fmt.Sprintf("Cluster creation failed for: %s; %s; %+v", cr.Name, err.Error(), err))
-			log.Info(fmt.Sprintf("Remove the %s and %s annotations if you would like the controller to retry creation", providerKopsCreatePending, providerKopsUpdateLocked))
+			return errors.Wrap(err, oneShotError)
 		}
 
-		if err := c.service.updateCluster(bgCtx, cr); err != nil {
-			log.Info(fmt.Sprintf("Post create update error: %s; %+v", err.Error(), err))
+		if err := c.service.kopsUpdateCluster(bgCtx, cr); err != nil {
+			return errors.Wrap(err, oneShotError)
 		}
 
-		// TODO(ab): we need to provide lifecycle management for keypairs and secrets,
+		// TODO(ab): we need to provide lifecycle management for keypairs
 		// rather than only providing bootstrap creation
 		for _, kp := range cr.Spec.ForProvider.Keypairs {
-			privateKeyData := []byte{}
-			if kp.Key != nil {
-				privateKeySource, err := resource.CommonCredentialExtractor(bgCtx, kp.Key.Value.Source, c.kube, kp.Key.Value.CommonCredentialSelectors)
-				privateKeyData = append(privateKeyData, privateKeySource...)
-				if err != nil {
-					log.Info(fmt.Sprintf("Post create keypair error: %s; %+v", err.Error(), err))
-				}
-			}
-			if err := c.service.createKeypair(bgCtx, cr, kp, privateKeyData); err != nil {
-				log.Info(fmt.Sprintf("Post create keypair error: %s; %+v", err.Error(), err))
+			if err := c.service.createKeypair(bgCtx, c.kube, cr, kp); err != nil {
+				return errors.Wrap(err, oneShotError)
 			}
 		}
-		for _, secret := range cr.Spec.ForProvider.Secrets {
-			secretData, err := resource.CommonCredentialExtractor(bgCtx, secret.Value.Source, c.kube, secret.Value.CommonCredentialSelectors)
-			if err != nil {
-				log.Info(fmt.Sprintf("Post create secret error: %s; %+v", err.Error(), err))
-			} else {
-				if err := c.service.createSecret(bgCtx, cr, secret, secretData); err != nil {
-					log.Info(fmt.Sprintf("Post create secret error: %s; %+v", err.Error(), err))
-				}
+
+		for _, s := range cr.Spec.ForProvider.Secrets {
+			if err := c.service.createSecret(bgCtx, c.kube, cr, s); err != nil {
+				return errors.Wrap(err, oneShotError)
 			}
 		}
 
 		if len(cr.Spec.ForProvider.Keypairs) > 0 || len(cr.Spec.ForProvider.Secrets) > 0 {
-			if err := c.service.updateCluster(bgCtx, cr); err != nil {
-				log.Info(fmt.Sprintf("POST CREATE UPDATE ERROR: %s; %+v", err.Error(), err))
-			}
 			// force cloudonly roll for initial cluster creation when keypairs are introduced
 			truePtr := bool(true)
 			cr.Spec.ForProvider.RollingUpdateOpts.CloudOnly = &truePtr
 			if err := c.service.rollingUpdateCluster(bgCtx, cr); err != nil {
-				log.Info(fmt.Sprintf("POST CREATE ROLLING UPDATE ERROR: %s; %+v", err.Error(), err))
+				return errors.Wrap(err, oneShotError)
 			}
 		}
 
 		if err := c.annotateCluster(bgCtx, cr, map[string]string{providerKopsCreateComplete: ""}); err != nil {
-			log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
+			return errors.Wrap(err, oneShotError)
 		}
-		// naive attempt to unlock cluster
+		// unlock cluster
 		if err := c.unlockCluster(bgCtx, cr, []string{providerKopsCreatePending, providerKopsUpdateLocked}); err != nil {
-			log.Info(fmt.Sprintf("WARNING: %s", err.Error()))
+			return errors.Wrap(err, oneShotError)
+		}
+		return nil
+	}
+
+	// don't block when updating the cluster, this takes a while..
+	// at the same time, we need to scream loudly if anything in here breaks
+	// the initial cluster creation in any way
+	go func() {
+		if err := runCreate(); err != nil {
+			log.Info(fmt.Sprintf("%+v", err))
+			// naive attempt to pass error information into the k8s artifact
+			bgCtx := context.Background()
+			if err := c.annotateCluster(bgCtx, cr, map[string]string{providerKopsCreateFail: fmt.Sprintf("%+v", err)}); err != nil {
+				log.Info(fmt.Sprintf("%+v", err))
+			}
 		}
 	}()
 
@@ -480,7 +489,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	go func() {
 		bgCtx := context.Background()
 
-		if err := c.service.updateCluster(bgCtx, cr); err != nil {
+		if err := c.service.updateCluster(bgCtx, c.kube, cr); err != nil {
 			log.Info(fmt.Sprintf("UPDATE ERROR: %s; %+v", err.Error(), err))
 		} else if err := c.service.rollingUpdateCluster(bgCtx, cr); err != nil {
 			log.Info(fmt.Sprintf("ROLLING UPDATE ERROR: %s; %+v", err.Error(), err))

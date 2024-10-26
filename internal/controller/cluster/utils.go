@@ -68,9 +68,11 @@ type metadataInstanceGroupSpec struct {
 }
 
 type observedDelta struct {
-	Operation observedDeltaOperation `json:"operation"`
-	Resource  observedDeltaResource  `json:"resource"`
-	Diff      string                 `json:"diff"`
+	Operation        observedDeltaOperation   `json:"operation"`
+	Resource         observedDeltaResource    `json:"resource"`
+	Diff             string                   `json:"diff"`
+	ResourceFilePath string                   `json:"resourceFilePath,omitempty"`
+	ResourceSecret   *apisv1alpha1.SecretSpec `json:"resourceSecret,omitempty"`
 }
 
 type observedDeltaOperation string
@@ -81,8 +83,9 @@ const (
 	updateDelta observedDeltaOperation = "update"
 	deleteDelta observedDeltaOperation = "delete"
 
-	cluster       observedDeltaResource = "cluster"
-	instanceGroup observedDeltaResource = "instanceGroup"
+	clusterResourceDelta       observedDeltaResource = "cluster"
+	instanceGroupResourceDelta observedDeltaResource = "instanceGroup"
+	secretResourceDelta        observedDeltaResource = "secret"
 )
 
 func getClusterExternalName(cr *apisv1alpha1.Cluster) string {
@@ -203,6 +206,14 @@ func getKopsInstanceGroupFilename(cr *apisv1alpha1.Cluster, ig *apisv1alpha1.Ins
 	return fmt.Sprintf("/tmp/%s_%s_%s.yaml",
 		strings.ReplaceAll(getClusterExternalName(cr), ".", "-"),
 		strings.ReplaceAll(ig.Name, ".", "-"),
+		fileSuffix,
+	)
+}
+
+func getKopsInstanceGroupFilenameFromYaml(cr *apisv1alpha1.Cluster, ig *instanceGroupYaml, fileSuffix string) string {
+	return fmt.Sprintf("/tmp/%s_%s_%s.yaml",
+		strings.ReplaceAll(getClusterExternalName(cr), ".", "-"),
+		strings.ReplaceAll(ig.Metadata.Name, ".", "-"),
 		fileSuffix,
 	)
 }

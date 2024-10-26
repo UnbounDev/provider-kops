@@ -51,7 +51,7 @@ spec:
             - name: ETCD_AUTO_COMPACTION_MODE
               value: periodic
             - name: ETCD_AUTO_COMPACTION_RETENTION
-              value: "12"
+              value: "1"
             - name: ETCD_QUOTA_BACKEND_BYTES
               value: "6000000000"
       - etcdMembers:
@@ -79,7 +79,7 @@ spec:
             - name: ETCD_AUTO_COMPACTION_MODE
               value: periodic
             - name: ETCD_AUTO_COMPACTION_RETENTION
-              value: "12"
+              value: "1"
             - name: ETCD_QUOTA_BACKEND_BYTES
               value: "6000000000"
         name: events

@@ -400,10 +400,16 @@ type SecretValue struct {
 // ***** END SecretsSpec and related *****
 // *****
 
+type SecretObservation struct {
+	Name string `json:"name"`
+	Kind string `json:"kind"`
+}
+
 // ClusterObservation are the observable fields of a Cluster.
 type ClusterObservation struct {
 	ClusterSpec        *KopsClusterSpec                  `json:"clusterSpec,omitempty"        yaml:"clusterSpec,omitempty"`
 	InstanceGroupSpecs map[string]*KopsInstanceGroupSpec `json:"instanceGroupSpecs,omitempty" yaml:"instanceGroupSpecs,omitempty"`
+	Secrets            []*SecretObservation              `json:"secrets,omitempty"            yaml:"secrets,omitempty"`
 }
 
 // A ClusterSpec defines the desired state of a Cluster.

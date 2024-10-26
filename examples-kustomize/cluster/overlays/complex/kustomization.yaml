@@ -34,6 +34,8 @@ patches:
       forProvider:
         state: s3://your-bucket
         cluster:
+          assets:
+            containerRegistry: us.gcr.io/<YOUR_REGISTRY>
           authorization:
             rbac: {}
           kubernetesVersion: v1.29.6
@@ -136,6 +138,15 @@ patches:
             yourCert
             -----END CERTIFICATE-----
           primary: false
+        secrets:
+        - name: dockerconfig
+          kind: dockerconfig
+          value:
+            source: Secret
+            secretRef:
+              namespace: default
+              name: regsecret
+              key: ".dockerconfigjson"
       writeConnectionSecretToRef:
         name: complex-xplane-kops
         namespace: default
