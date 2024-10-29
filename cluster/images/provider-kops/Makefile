@@ -11,8 +11,8 @@ include ../../../build/makelib/imagelight.mk
 # ====================================================================================
 # Targets
 
-KOPS_VERSION    := v1.29.2
-KUBECTL_VERSION := v1.30.2
+KOPS_VERSION    := v1.30.1
+KUBECTL_VERSION := v1.31.1
 
 img.build:
 	@$(INFO) docker build $(IMAGE)
