@@ -7,6 +7,11 @@ metadata:
 spec:
   forProvider:
     cluster:
+      additionalPolicies:
+        node: |
+          [
+            {"Effect":"Allow","Action":["s3:Get*"],"Resource":["arn:aws:s3:::<YOUR_STATE_BUCKET>/<YOUR_CLUSTER_NAME>.k8s.local/secrets/dockerconfig"]}
+          ]
       api:
         loadBalancer:
           class: Network
@@ -19,11 +24,16 @@ spec:
         containerRegistry: us.gcr.io/<YOUR_REGISTRY>
       authorization:
         rbac: {}
+      channel: stable
       cloudLabels:
         Careers: xplane-kops
       cloudProvider: aws
       clusterAutoscaler:
         enabled: true
+      containerd:
+        configAdditions:
+          plugins."io.containerd.cri.v1.images".registry.mirrors."us.gcr.io".endpoint: https://us.gcr.io
+          plugins."io.containerd.grpc.v1.cri".sandbox_image: registry.k8s.io/pause:3.10@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a
       etcdClusters:
       - etcdMembers:
         - encryptedVolume: true
@@ -104,7 +114,7 @@ spec:
           clusters:
             - name: cluster
               cluster:
-                server: http://api.internal.azq-beta-simple-xplane-kops.k8s.local:30007/k8s-audit
+                server: http://api.internal.<YOUR_CLUSTER_NAME>.k8s.local:30007/k8s-audit
           contexts:
             - context:
                 cluster: cluster
@@ -187,7 +197,7 @@ spec:
     instanceGroups:
     - name: ctrl-0
       spec:
-        image: ami-0a0e5d9c7acc336f1
+        image: ami-01a8b7cc84780badb
         machineType: m5a.xlarge
         maxSize: 1
         minSize: 1
@@ -198,7 +208,7 @@ spec:
         - cluster-0
     - name: ctrl-1
       spec:
-        image: ami-0a0e5d9c7acc336f1
+        image: ami-01a8b7cc84780badb
         machineType: m5a.xlarge
         maxSize: 1
         minSize: 1
@@ -209,7 +219,7 @@ spec:
         - cluster-1
     - name: ctrl-2
       spec:
-        image: ami-0a0e5d9c7acc336f1
+        image: ami-01a8b7cc84780badb
         machineType: m5a.xlarge
         maxSize: 1
         minSize: 1
@@ -218,9 +228,9 @@ spec:
         rootVolumeSize: 256
         subnets:
         - cluster-2
-    - name: cluster
+    - name: nodes
       spec:
-        image: ami-0a0e5d9c7acc336f1
+        image: ami-01a8b7cc84780badb
         machineType: m5a.large
         maxSize: 100
         minSize: 1
@@ -250,7 +260,7 @@ spec:
           name: regsecret
           namespace: default
         source: Secret
-    state: s3://your-bucket
+    state: s3://<YOUR_STATE_BUCKET>
   providerConfigRef:
     name: aws-write
   writeConnectionSecretToRef:

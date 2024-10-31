@@ -109,6 +109,7 @@ func (k *kopsClient) diffClusterV2(_ context.Context, cr *apisv1alpha1.Cluster) 
 	}
 
 	for _, igDesired := range igYamls {
+		igDesired := igDesired
 		igSource := cr.Status.AtProvider.InstanceGroupSpecs[igDesired.Metadata.Name]
 		if igSource == nil {
 			changes = append(changes, observedDelta{
@@ -132,6 +133,7 @@ func (k *kopsClient) diffClusterV2(_ context.Context, cr *apisv1alpha1.Cluster) 
 		sourceSecrets = append(sourceSecrets, secretObserved.Name)
 	}
 	for _, secretDesired := range cr.Spec.ForProvider.Secrets {
+		secretDesired := secretDesired
 		if !slices.Contains(sourceSecrets, secretDesired.Kind) {
 			changes = append(changes, observedDelta{
 				Operation:      createDelta,
@@ -387,6 +389,8 @@ func (k *kopsClient) updateCluster(ctx context.Context, kube client.Client, cr *
 			operation = "create"
 		case updateDelta:
 			operation = "replace"
+		case deleteDelta:
+			return fmt.Errorf("delete operation not yet supported")
 		}
 
 		//nolint:gosec

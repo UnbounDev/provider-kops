@@ -386,6 +386,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 			return errors.Wrap(err, oneShotError)
 		}
 
+		// first update pass creates the cluster resources
 		if err := c.service.kopsUpdateCluster(bgCtx, cr); err != nil {
 			return errors.Wrap(err, oneShotError)
 		}
@@ -404,13 +405,16 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 			}
 		}
 
-		if len(cr.Spec.ForProvider.Keypairs) > 0 || len(cr.Spec.ForProvider.Secrets) > 0 {
-			// force cloudonly roll for initial cluster creation when keypairs are introduced
-			truePtr := bool(true)
-			cr.Spec.ForProvider.RollingUpdateOpts.CloudOnly = &truePtr
-			if err := c.service.rollingUpdateCluster(bgCtx, cr); err != nil {
-				return errors.Wrap(err, oneShotError)
-			}
+		// second update pass establishes keys / secrets
+		if err := c.service.kopsUpdateCluster(bgCtx, cr); err != nil {
+			return errors.Wrap(err, oneShotError)
+		}
+
+		// force cloudonly roll for initial cluster creation to supply secrets to hosts
+		truePtr := bool(true)
+		cr.Spec.ForProvider.RollingUpdateOpts.CloudOnly = &truePtr
+		if err := c.service.rollingUpdateCluster(bgCtx, cr); err != nil {
+			return errors.Wrap(err, oneShotError)
 		}
 
 		if err := c.annotateCluster(bgCtx, cr, map[string]string{providerKopsCreateComplete: ""}); err != nil {

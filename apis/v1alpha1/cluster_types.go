@@ -80,6 +80,7 @@ type RollingUpdateOptsSpec struct {
 // for code gen; ref: https://book.kubebuilder.io/reference/markers
 type KopsClusterSpec struct {
 	Assets             AssetsSpec             `yaml:"assets,omitempty" json:"assets,omitempty"`
+	Containerd         ContainerdConfigSpec   `yaml:"containerd,omitempty" json:"containerd,omitempty"`
 	AdditionalPolicies AdditionalPoliciesSpec `yaml:"additionalPolicies,omitempty" json:"additionalPolicies,omitempty"`
 	API                APISpec                `yaml:"api,omitempty" json:"api,omitempty"`
 	Authorization      *AuthorizationSpec     `yaml:"authorization,omitempty" json:"authorization,omitempty"`
@@ -127,9 +128,15 @@ type AssetsSpec struct {
 	ContainerRegistry string `yaml:"containerRegistry,omitempty" json:"containerRegistry,omitempty"`
 }
 
+type ContainerdConfigSpec struct {
+	ConfigAdditions map[string]*string `yaml:"configAdditions,omitempty" json:"configAdditions,omitempty"`
+	ConfigOverride  *string            `yaml:"configOverride,omitempty" json:"configOverride,omitempty"`
+	LogLevel        *string            `yaml:"logLevel,omitempty" json:"logLevel,omitempty"`
+}
+
 type AdditionalPoliciesSpec struct {
-	Node   string `yaml:"node"   json:"node"`
-	Master string `yaml:"master" json:"master"`
+	Node   string `yaml:"node,omitempty"   json:"node,omitempty"`
+	Master string `yaml:"master,omitempty" json:"master,omitempty"`
 }
 
 type APISpec struct {

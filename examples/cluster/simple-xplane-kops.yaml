@@ -17,6 +17,7 @@ spec:
           type: Public
       authorization:
         alwaysAllow: {}
+      channel: stable
       cloudLabels:
         Careers: xplane-kops
       cloudProvider: aws
@@ -157,7 +158,7 @@ spec:
         rootVolumeSize: 256
         subnets:
         - cluster-2
-    - name: cluster
+    - name: nodes
       spec:
         image: ami-0a0e5d9c7acc336f1
         machineType: m5a.large

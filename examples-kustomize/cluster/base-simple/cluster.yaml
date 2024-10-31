@@ -19,6 +19,7 @@ spec:
           - name: ext-2
       authorization:
         alwaysAllow: {}
+      channel: stable
       cloudLabels:
         Careers: xplane-kops
       cloudProvider: aws
@@ -166,7 +167,7 @@ spec:
     #-----------------------------------------------
     # Data-Plane Instance Groups
     #-----------------------------------------------
-    - name: cluster
+    - name: nodes
       spec:
         image: ami
         machineType: m5a.large
