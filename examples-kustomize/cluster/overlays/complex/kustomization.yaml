@@ -11,7 +11,8 @@ configurations:
 
 images:
 - name: ami
-  newName: ami-0a0e5d9c7acc336f1
+  # us-west-2; ubuntu 24.04
+  newName: ami-01a8b7cc84780badb
 
 patches:
 - target:
@@ -32,11 +33,22 @@ patches:
         kops: xplane-kops
     spec:
       forProvider:
-        state: s3://your-bucket
+        state: s3://<YOUR_STATE_BUCKET>
         cluster:
+          additionalPolicies:
+            node: |
+              [
+                {"Effect":"Allow","Action":["s3:Get*"],"Resource":["arn:aws:s3:::<YOUR_STATE_BUCKET>/<YOUR_CLUSTER_NAME>.k8s.local/secrets/dockerconfig"]}
+              ]
+          assets:
+            containerRegistry: us.gcr.io/<YOUR_REGISTRY>
+          containerd:
+            configAdditions:
+              plugins."io.containerd.cri.v1.images".registry.mirrors."us.gcr.io".endpoint: "https://us.gcr.io"
+              plugins."io.containerd.grpc.v1.cri".sandbox_image: "registry.k8s.io/pause:3.10@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a"
           authorization:
             rbac: {}
-          kubernetesVersion: v1.29.6
+          kubernetesVersion: v1.30.1
           networkCIDR: yourVpcNetworkCidr
           networkID: yourVpcId
           networking:
@@ -116,7 +128,7 @@ patches:
               clusters:
                 - name: cluster
                   cluster:
-                    server: http://api.internal.azq-beta-simple-xplane-kops.k8s.local:30007/k8s-audit
+                    server: http://api.internal.<YOUR_CLUSTER_NAME>.k8s.local:30007/k8s-audit
               contexts:
                 - context:
                     cluster: cluster
@@ -136,6 +148,15 @@ patches:
             yourCert
             -----END CERTIFICATE-----
           primary: false
+        secrets:
+        - name: dockerconfig
+          kind: dockerconfig
+          value:
+            source: Secret
+            secretRef:
+              namespace: default
+              name: regsecret
+              key: ".dockerconfigjson"
       writeConnectionSecretToRef:
         name: complex-xplane-kops
         namespace: default

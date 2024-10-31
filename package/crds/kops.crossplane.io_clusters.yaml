@@ -85,9 +85,6 @@ spec:
                             type: string
                           node:
                             type: string
-                        required:
-                        - master
-                        - node
                         type: object
                       api:
                         properties:
@@ -163,6 +160,17 @@ spec:
                         enum:
                         - containerd
                         type: string
+                      containerd:
+                        properties:
+                          configAdditions:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          configOverride:
+                            type: string
+                          logLevel:
+                            type: string
+                        type: object
                       encryptionConfig:
                         type: boolean
                       etcdClusters:
@@ -886,9 +894,6 @@ spec:
                             type: string
                           node:
                             type: string
-                        required:
-                        - master
-                        - node
                         type: object
                       api:
                         properties:
@@ -964,6 +969,17 @@ spec:
                         enum:
                         - containerd
                         type: string
+                      containerd:
+                        properties:
+                          configAdditions:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          configOverride:
+                            type: string
+                          logLevel:
+                            type: string
+                        type: object
                       encryptionConfig:
                         type: boolean
                       etcdClusters:
@@ -1286,6 +1302,18 @@ spec:
                       - subnets
                       type: object
                     type: object
+                  secrets:
+                    items:
+                      properties:
+                        kind:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      type: object
+                    type: array
                 type: object
               conditions:
                 description: Conditions of the resource.

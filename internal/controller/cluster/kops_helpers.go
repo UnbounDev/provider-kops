@@ -9,70 +9,45 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 
-	"github.com/crossplane/provider-kops/apis/v1alpha1"
+	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	apisv1alpha1 "github.com/crossplane/provider-kops/apis/v1alpha1"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (k *kopsClient) observeCluster(ctx context.Context, cr *apisv1alpha1.Cluster) (*apisv1alpha1.KopsClusterSpec, map[string]*apisv1alpha1.KopsInstanceGroupSpec, error) {
+func (k *kopsClient) observeCluster(ctx context.Context, cr *apisv1alpha1.Cluster) (*apisv1alpha1.KopsClusterSpec, map[string]*apisv1alpha1.KopsInstanceGroupSpec, []*apisv1alpha1.SecretObservation, error) {
 	clusterYaml := &clusterYaml{}
 	instanceGroupSpecMap := map[string]*apisv1alpha1.KopsInstanceGroupSpec{}
+	secretsObservation := []*apisv1alpha1.SecretObservation{}
 
 	// pull the cluster definition
 	{
-		var stdOut, stdErr bytes.Buffer
-
-		//nolint:gosec
-		cmd := exec.CommandContext(
-			ctx,
-			"kops",
-			"get",
-			"cluster",
-			"--output=yaml",
-			fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
-			fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
-		)
-		cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
-		cmd.Stdout = &stdOut
-		cmd.Stderr = &stdErr
-		if err := cmd.Run(); err != nil {
-			return &apisv1alpha1.KopsClusterSpec{}, instanceGroupSpecMap, errors.Wrapf(err, "cmd: %s; stderr: %s; stdout: %s", cmd.String(), stdErr.String(), stdOut.String())
+		output, err := k.kopsGet(ctx, cr, "cluster", []string{"--output=yaml"})
+		if err != nil {
+			return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, errors.Wrapf(err, "error getting cluster")
 		}
 
-		output := stdOut.Bytes()
-		// log.Debug(string(output))
-
 		if err := yaml.Unmarshal(output, clusterYaml); err != nil {
-			return &apisv1alpha1.KopsClusterSpec{}, instanceGroupSpecMap, errors.Wrapf(err, "fucked that")
+			return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, errors.Wrapf(err, "error rendering cluster")
 		}
 	}
 
 	// pull the instance group definitions
 	{
-		var stdOut, stdErr bytes.Buffer
-
-		//nolint:gosec
-		cmd := exec.CommandContext(
-			ctx,
-			"kops",
-			"get",
-			"instancegroups",
-			"--output=yaml",
-			fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
-			fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
-		)
-		cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
-		cmd.Stdout = &stdOut
-		cmd.Stderr = &stdErr
-		if err := cmd.Run(); err != nil {
-			return &apisv1alpha1.KopsClusterSpec{}, instanceGroupSpecMap, errors.Wrapf(err, "cmd: %s; stderr: %s; stdout: %s", cmd.String(), stdErr.String(), stdOut.String())
+		output, err := k.kopsGet(ctx, cr, "instancegroups", []string{"--output=yaml"})
+		if err != nil {
+			// ignore "not found" errors since those are just edge cases as the cluster is being created
+			if strings.Contains(err.Error(), "Error: no InstanceGroup objects found") {
+				return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, nil
+			} else {
+				return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, errors.Wrapf(err, "error getting instancegroups")
+			}
 		}
-		output := stdOut.Bytes()
-		// log.Debug(string(output))
 
 		instanceGroupYamls := []*instanceGroupYaml{}
 		dec := yaml.NewDecoder(bytes.NewReader(output))
@@ -89,10 +64,90 @@ func (k *kopsClient) observeCluster(ctx context.Context, cr *apisv1alpha1.Cluste
 
 	}
 
-	return &clusterYaml.Spec, instanceGroupSpecMap, nil
+	// pull the list of secrets (requires that the cluster exists..)
+	{
+		output, err := k.kopsGet(ctx, cr, "secrets", []string{})
+		if err != nil {
+			// ignore "not found" errors since those are just edge cases as the cluster is being created
+			if strings.Contains(err.Error(), "Error: no secrets found") {
+				return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, nil
+			} else {
+				return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, errors.Wrapf(err, "error getting secrets")
+			}
+		}
+
+		lines := strings.Split(string(output), "\n")
+		// drop the first element since it's the header..
+		secrets := lines[1:]
+		for _, s := range secrets {
+			kind := "System"
+			if slices.Contains([]string{"ciliumpassword", "dockerconfig", "encryptionconfig"}, s) {
+				kind = s
+			}
+			if s != "" {
+				secretsObservation = append(secretsObservation, &apisv1alpha1.SecretObservation{Name: s, Kind: kind})
+			}
+		}
+	}
+
+	return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, nil
 }
 
-func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) error {
+func (k *kopsClient) diffClusterV2(_ context.Context, cr *apisv1alpha1.Cluster) []observedDelta {
+	fileSuffix := fileSuffixUpdate
+	clusterYaml, igYamls := buildKopsYamlStructs(cr)
+	changes := []observedDelta{}
+
+	if !cmp.Equal(cr.Status.AtProvider.ClusterSpec, &clusterYaml.Spec) {
+		diff := cmp.Diff(cr.Status.AtProvider.ClusterSpec, &clusterYaml.Spec)
+		changes = append(changes, observedDelta{
+			Operation:        updateDelta,
+			Resource:         clusterResourceDelta,
+			ResourceFilePath: getKopsClusterFilename(cr, fileSuffix),
+			Diff:             diff,
+		})
+	}
+
+	for _, igDesired := range igYamls {
+		igDesired := igDesired
+		igSource := cr.Status.AtProvider.InstanceGroupSpecs[igDesired.Metadata.Name]
+		if igSource == nil {
+			changes = append(changes, observedDelta{
+				Operation:        createDelta,
+				Resource:         instanceGroupResourceDelta,
+				ResourceFilePath: getKopsInstanceGroupFilenameFromYaml(cr, &igDesired, fileSuffix),
+			})
+		} else if !cmp.Equal(igSource, &igDesired.Spec) {
+			diff := cmp.Diff(igSource, &igDesired.Spec)
+			changes = append(changes, observedDelta{
+				Operation:        updateDelta,
+				Resource:         instanceGroupResourceDelta,
+				ResourceFilePath: getKopsInstanceGroupFilenameFromYaml(cr, &igDesired, fileSuffix),
+				Diff:             diff,
+			})
+		}
+	}
+
+	sourceSecrets := []string{}
+	for _, secretObserved := range cr.Status.AtProvider.Secrets {
+		sourceSecrets = append(sourceSecrets, secretObserved.Name)
+	}
+	for _, secretDesired := range cr.Spec.ForProvider.Secrets {
+		secretDesired := secretDesired
+		if !slices.Contains(sourceSecrets, secretDesired.Kind) {
+			changes = append(changes, observedDelta{
+				Operation:      createDelta,
+				Resource:       secretResourceDelta,
+				Diff:           fmt.Sprintf("create %s secret from %+v", secretDesired.Name, secretDesired.Value),
+				ResourceSecret: &secretDesired,
+			})
+		}
+	}
+
+	return changes
+}
+
+func (k *kopsClient) createCluster(_ context.Context, cr *apisv1alpha1.Cluster) error {
 
 	fileSuffix := fileSuffixCreate
 
@@ -162,7 +217,17 @@ func (k *kopsClient) createCluster(_ context.Context, cr *v1alpha1.Cluster) erro
 	return nil
 }
 
-func (k *kopsClient) createKeypair(_ context.Context, cr *v1alpha1.Cluster, kp v1alpha1.KeypairSpec, privateKeyData []byte) error {
+func (k *kopsClient) createKeypair(ctx context.Context, kube client.Client, cr *apisv1alpha1.Cluster, kp apisv1alpha1.KeypairSpec) error {
+
+	privateKeyData := []byte{}
+	if kp.Key != nil {
+		privateKeySource, err := resource.CommonCredentialExtractor(ctx, kp.Key.Value.Source, kube, kp.Key.Value.CommonCredentialSelectors)
+		privateKeyData = append(privateKeyData, privateKeySource...)
+		if err != nil {
+			return err
+		}
+	}
+
 	args := []string{}
 	if kp.Primary {
 		args = append(args, "--primary=true")
@@ -219,7 +284,13 @@ func (k *kopsClient) createKeypair(_ context.Context, cr *v1alpha1.Cluster, kp v
 	return nil
 }
 
-func (k *kopsClient) createSecret(_ context.Context, cr *v1alpha1.Cluster, secret v1alpha1.SecretSpec, secretData []byte) error {
+func (k *kopsClient) createSecret(ctx context.Context, kube client.Client, cr *apisv1alpha1.Cluster, secret apisv1alpha1.SecretSpec) error {
+
+	secretData, err := resource.CommonCredentialExtractor(ctx, secret.Value.Source, kube, secret.Value.CommonCredentialSelectors)
+	if err != nil {
+		return errors.Wrapf(err, "create secret error for %s", secret.Name)
+	}
+
 	args := []string{}
 	f, err := os.CreateTemp(tmpDir, fmt.Sprintf("%s_*.secret", secret.Kind))
 	if len(secretData) > 0 {
@@ -257,34 +328,9 @@ func (k *kopsClient) createSecret(_ context.Context, cr *v1alpha1.Cluster, secre
 	return nil
 }
 
-func (k *kopsClient) authenticateToCluster(ctx context.Context, cr *v1alpha1.Cluster, extraArgs []string) error {
-
-	//nolint:gosec
-	cmd := exec.CommandContext(
-		ctx,
-		"kops",
-		"export",
-		"kubecfg",
-		"--admin",
-		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
-		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
-	)
-	cmd.Args = append(cmd.Args, extraArgs...)
-	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
-	log.Info(fmt.Sprintf("run: %s", cmd.String()))
-
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return errors.Wrap(err, string(output))
-	} else {
-		log.Debug(string(output))
-	}
-
-	return nil
-}
-
 // validateCluster runs the kops cli command to validate a kops cluster, we need to use
 // exec here bc the kops golang library does not provide direct access to this method
-func (k *kopsClient) validateCluster(ctx context.Context, cr *v1alpha1.Cluster, extraArgs []string) (*kopsValidationResponse, error) {
+func (k *kopsClient) validateCluster(ctx context.Context, cr *apisv1alpha1.Cluster, extraArgs []string) (*kopsValidationResponse, error) {
 
 	var stdOut, stdErr bytes.Buffer
 	res := &kopsValidationResponse{}
@@ -330,116 +376,75 @@ func (k *kopsClient) validateCluster(ctx context.Context, cr *v1alpha1.Cluster, 
 
 }
 
-func (k *kopsClient) diffClusterV2(_ context.Context, cr *v1alpha1.Cluster) []observedDelta {
-	clusterYaml, igYamls := buildKopsYamlStructs(cr)
-	changes := []observedDelta{}
+func (k *kopsClient) updateCluster(ctx context.Context, kube client.Client, cr *apisv1alpha1.Cluster) error {
 
-	if !cmp.Equal(cr.Status.AtProvider.ClusterSpec, &clusterYaml.Spec) {
-		diff := cmp.Diff(cr.Status.AtProvider.ClusterSpec, &clusterYaml.Spec)
-		log.Info(diff)
-		changes = append(changes, observedDelta{
-			Operation: updateDelta,
-			Resource:  cluster,
-			Diff:      diff,
-		})
-	}
+	fileSuffix := fileSuffixUpdate
 
-	for _, igDesired := range igYamls {
-		igSource := cr.Status.AtProvider.InstanceGroupSpecs[igDesired.Metadata.Name]
-		if igSource == nil {
-			changes = append(changes, observedDelta{
-				Operation: createDelta,
-				Resource:  instanceGroup,
-			})
-		} else if !cmp.Equal(igSource, &igDesired.Spec) {
-			diff := cmp.Diff(igSource, &igDesired.Spec)
-			changes = append(changes, observedDelta{
-				Operation: updateDelta,
-				Resource:  instanceGroup,
-				Diff:      diff,
-			})
+	upsertClusterOrInstanceGroup := func(d observedDelta) error {
+
+		resourceFilePath := d.ResourceFilePath
+		operation := ""
+		switch d.Operation {
+		case createDelta:
+			operation = "create"
+		case updateDelta:
+			operation = "replace"
+		case deleteDelta:
+			return fmt.Errorf("delete operation not yet supported")
 		}
-	}
-
-	return changes
-}
-
-func (k *kopsClient) updateCluster(ctx context.Context, cr *v1alpha1.Cluster) error {
-
-	// if we've already created everything then the naive update is to replace literally
-	// _everything_ based on the desired state
-	if _, ok := cr.Annotations[providerKopsCreateComplete]; ok {
-
-		fileSuffix := fileSuffixUpdate
-
-		// first construct the yaml files
-		if err := writeKopsYamlFile(cr, k.pubSshKey, fileSuffix); err != nil {
-			return err
-		}
-
-		// now naively replace _everything_
 
 		//nolint:gosec
 		cmd := exec.Command(
 			"kops",
-			"replace",
-			fmt.Sprintf("-f%s", getKopsClusterFilename(cr, fileSuffix)),
+			operation,
+			fmt.Sprintf("-f%s", resourceFilePath),
 			fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
 			fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 		)
 		cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+		log.Info(fmt.Sprintf("run: %s", cmd.String()))
 
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return errors.Wrap(err, string(output))
 		} else {
 			log.Debug(string(output))
 		}
+		return nil
+	}
 
-		for i := range cr.Spec.ForProvider.InstanceGroups {
-			ig := cr.Spec.ForProvider.InstanceGroups[i]
+	updateSecret := func(d observedDelta) error {
+		if d.Operation == createDelta {
+			return k.createSecret(ctx, kube, cr, *d.ResourceSecret)
+		}
+		return nil
+	}
 
-			//nolint:gosec
-			cmd := exec.Command(
-				"kops",
-				"replace",
-				fmt.Sprintf("-f%s", getKopsInstanceGroupFilename(cr, &ig, fileSuffix)),
-				fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
-				fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
-			)
-			cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	// first construct the yaml files
+	if err := writeKopsYamlFile(cr, k.pubSshKey, fileSuffix); err != nil {
+		return err
+	}
 
-			if output, err := cmd.CombinedOutput(); err != nil {
-				return errors.Wrap(err, string(output))
-			} else {
-				log.Debug(string(output))
+	// get the delta...
+	deltas := k.diffClusterV2(ctx, cr)
+
+	// adjust the deltas...
+	for _, d := range deltas {
+		if d.Resource == clusterResourceDelta || d.Resource == instanceGroupResourceDelta {
+			if err := upsertClusterOrInstanceGroup(d); err != nil {
+				return err
 			}
 		}
-
+		if d.Resource == secretResourceDelta {
+			if err := updateSecret(d); err != nil {
+				return err
+			}
+		}
 	}
 
-	//nolint:gosec
-	cmd := exec.CommandContext(
-		ctx,
-		"kops",
-		"update",
-		"cluster",
-		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
-		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
-		"--yes",
-	)
-	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
-	log.Info(fmt.Sprintf("run: %s", cmd.String()))
-
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return errors.Wrap(err, string(output))
-	} else {
-		log.Debug(fmt.Sprintf("Applied Update:%s", string(output)))
-	}
-
-	return nil
+	return k.kopsUpdateCluster(ctx, cr)
 }
 
-func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *v1alpha1.Cluster) error {
+func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *apisv1alpha1.Cluster) error {
 
 	// assign rolling update defaults based on kops cli default values
 	defaultFalse := bool(false)
@@ -514,5 +519,80 @@ func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *v1alpha1.Clus
 	} else {
 		log.Debug(fmt.Sprintf("Applied Update:%s", string(output)))
 	}
+	return nil
+}
+
+func (k *kopsClient) kopsExportKubecfgAdmin(ctx context.Context, cr *apisv1alpha1.Cluster, extraArgs []string) error {
+
+	//nolint:gosec
+	cmd := exec.CommandContext(
+		ctx,
+		"kops",
+		"export",
+		"kubecfg",
+		"--admin",
+		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
+		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
+	)
+	cmd.Args = append(cmd.Args, extraArgs...)
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return errors.Wrapf(err, "cmd: %s; output: %s", cmd.String(), string(output))
+	}
+
+	return nil
+}
+
+func (k *kopsClient) kopsGet(ctx context.Context, cr *apisv1alpha1.Cluster, resource string, extraArgs []string) ([]byte, error) {
+
+	var stdOut, stdErr bytes.Buffer
+
+	//nolint:gosec
+	cmd := exec.CommandContext(
+		ctx,
+		"kops",
+		"get",
+		resource,
+		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
+		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
+	)
+	cmd.Args = append(cmd.Args, extraArgs...)
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Debug(fmt.Sprintf("run: %s", cmd.String()))
+
+	cmd.Stdout = &stdOut
+	cmd.Stderr = &stdErr
+	if err := cmd.Run(); err != nil {
+		return []byte{}, errors.Wrapf(err, "cmd: %s; stderr: %s; stdout: %s", cmd.String(), stdErr.String(), stdOut.String())
+	}
+
+	output := stdOut.Bytes()
+	// log.Debug(string(output))
+	return output, nil
+}
+
+func (k *kopsClient) kopsUpdateCluster(ctx context.Context, cr *apisv1alpha1.Cluster) error {
+
+	//nolint:gosec
+	cmd := exec.CommandContext(
+		ctx,
+		"kops",
+		"update",
+		"cluster",
+		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
+		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
+		"--yes",
+	)
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return errors.Wrap(err, string(output))
+	} else {
+		log.Debug(fmt.Sprintf("Applied Update:%s", string(output)))
+	}
+
 	return nil
 }
