@@ -1,16 +1,20 @@
 package cluster
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
 
+	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	apisv1alpha1 "github.com/crossplane/provider-kops/apis/v1alpha1"
 	"github.com/pkg/errors"
 	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -170,11 +174,16 @@ func getKubeConfigFilePath(cr *apisv1alpha1.Cluster) string {
 	return fmt.Sprintf("/tmp/%s_kubeconfig", strings.ReplaceAll(getClusterExternalName(cr), ".", "-"))
 }
 
+func getDockerConfigDirPath(cr *apisv1alpha1.Cluster) string {
+	return fmt.Sprintf("/tmp/%s_dockerconfig", strings.ReplaceAll(getClusterExternalName(cr), ".", "-"))
+}
+
 func getKopsCliEnv(cr *apisv1alpha1.Cluster, client *kopsClient) []string {
 	env := []string{}
 
 	kubeConfig := fmt.Sprintf("KUBECONFIG=%s", getKubeConfigFilePath(cr))
-	env = append(env, kubeConfig)
+	dockerConfig := fmt.Sprintf("DOCKER_CONFIG=%s", getDockerConfigDirPath(cr))
+	env = append(env, kubeConfig, dockerConfig)
 
 	awsAccessKeyID := fmt.Sprintf("AWS_ACCESS_KEY_ID=%s", client.awsCredentials.AccessKeyID)
 	if client.awsCredentials.AccessKeyID != "" {
@@ -306,6 +315,64 @@ func writeKopsYamlFile(cr *apisv1alpha1.Cluster, pubSshKey string, fileSuffix st
 		}
 	}
 
+	return nil
+}
+
+func checkWriteDockerConfigFile(ctx context.Context, kube client.Client, cr *apisv1alpha1.Cluster) error {
+
+	var secret *apisv1alpha1.SecretSpec
+	for _, s := range cr.Spec.ForProvider.Secrets {
+		s := s
+		if s.Kind == "dockerconfig" {
+			secret = &s
+		}
+	}
+	if secret == nil {
+		// no docker secret so return early
+		return nil
+	}
+
+	dirPath := getDockerConfigDirPath(cr)
+	filePath := path.Join(dirPath, "config.json")
+	secretData, err := resource.CommonCredentialExtractor(ctx, secret.Value.Source, kube, secret.Value.CommonCredentialSelectors)
+	if err != nil {
+		return errors.Wrapf(err, "write dockerconfig '%s' error", filePath)
+	}
+
+	if _, err := os.Stat(dirPath); err != nil && os.IsNotExist(err) {
+		if err := os.Mkdir(dirPath, 0750); err != nil {
+			return errors.Wrapf(err, "write dockerconfig '%s' error", filePath)
+		}
+	}
+
+	f, err := os.Create(path.Clean(filePath))
+	if len(secretData) > 0 {
+		if err != nil {
+			return err
+		}
+		if _, err = f.Write(secretData); err != nil {
+			return err
+		}
+		if err = f.Close(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func checkDeleteDockerConfigFile(_ context.Context, cr *apisv1alpha1.Cluster) error {
+	dirPath := getDockerConfigDirPath(cr)
+	filePath := path.Join(dirPath, "config.json")
+	if _, err := os.Stat(filePath); err == nil {
+		if f, err := os.Open(path.Clean(filePath)); err == nil {
+			deferRemove(f)
+		} else {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	return nil
 }
 

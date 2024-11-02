@@ -382,6 +382,10 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	runCreate := func() error {
 
 		bgCtx := context.Background()
+		if err := checkWriteDockerConfigFile(bgCtx, c.kube, cr); err != nil {
+			return errors.Wrap(err, oneShotError)
+		}
+
 		if err := c.service.createCluster(bgCtx, cr); err != nil {
 			return errors.Wrap(err, oneShotError)
 		}
@@ -423,6 +427,10 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		// unlock cluster
 		if err := c.unlockCluster(bgCtx, cr, []string{providerKopsCreatePending, providerKopsUpdateLocked}); err != nil {
 			return errors.Wrap(err, oneShotError)
+		}
+		// naive cleanup
+		if err := checkDeleteDockerConfigFile(bgCtx, cr); err != nil {
+			log.Info(fmt.Sprintf("Warning: error cleaning up docker config file: %+v", err))
 		}
 		return nil
 	}
@@ -493,6 +501,10 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	go func() {
 		bgCtx := context.Background()
 
+		if err := checkWriteDockerConfigFile(bgCtx, c.kube, cr); err != nil {
+			log.Info(fmt.Sprintf("UPDATE ERROR: %s; %+v", err.Error(), err))
+		}
+
 		if err := c.service.updateCluster(bgCtx, c.kube, cr); err != nil {
 			log.Info(fmt.Sprintf("UPDATE ERROR: %s; %+v", err.Error(), err))
 		} else if err := c.service.rollingUpdateCluster(bgCtx, cr); err != nil {
@@ -501,6 +513,11 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 
 		if err := c.unlockCluster(bgCtx, cr, []string{providerKopsUpdateLocked}); err != nil {
 			log.Info(fmt.Sprintf("WARNING: %s; %+v", err.Error(), err))
+		}
+
+		// naive cleanup
+		if err := checkDeleteDockerConfigFile(bgCtx, cr); err != nil {
+			log.Info(fmt.Sprintf("Warning: error cleaning up docker config file: %+v", err))
 		}
 
 		log.Info(fmt.Sprintf("Update complete for %s", cr.Name))
