@@ -8,8 +8,13 @@ spec:
   forProvider:
     cluster:
       additionalPolicies:
+        master: |
+          [
+            {"Effect":"Allow","Action":["kms:Encrypt","kms:Decrypt","kms:ReEncrypt*","kms:GenerateDataKey*","kms:DescribeKey"],"Resource":["<YOUR_KMS_ARN>"]}
+          ]
         node: |
           [
+            {"Effect":"Allow","Action":["kms:Encrypt","kms:Decrypt","kms:ReEncrypt*","kms:GenerateDataKey*","kms:DescribeKey"],"Resource":["<YOUR_KMS_ARN>"]},
             {"Effect":"Allow","Action":["s3:Get*"],"Resource":["arn:aws:s3:::<YOUR_STATE_BUCKET>/<YOUR_CLUSTER_NAME>.k8s.local/secrets/dockerconfig"]}
           ]
       api:
