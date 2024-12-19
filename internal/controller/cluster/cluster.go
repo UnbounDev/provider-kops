@@ -379,7 +379,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	log.Info(fmt.Sprintf("Begin creating: %s", cr.Name))
 	// uncomment for super verbose debugging... log.Debug(fmt.Sprintf("%+v", cr))
 
-	runCreate := func() error {
+	runCreate := func() error { //nolint:contextcheck
 
 		bgCtx := context.Background()
 		if err := checkWriteDockerConfigFile(bgCtx, c.kube, cr); err != nil {
@@ -438,7 +438,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	// don't block when updating the cluster, this takes a while..
 	// at the same time, we need to scream loudly if anything in here breaks
 	// the initial cluster creation in any way
-	go func() {
+	go func() { //nolint:contextcheck
 		if err := runCreate(); err != nil {
 			log.Info(fmt.Sprintf("%+v", err))
 			// naive attempt to pass error information into the k8s artifact
@@ -498,7 +498,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	log.Info(fmt.Sprintf("Begin updating: %+v; status: %s", cr.Name, cr.Status.Status))
 
 	// don't block when updating the cluster, this takes a while..
-	go func() {
+	go func() { //nolint:contextcheck
 		bgCtx := context.Background()
 
 		if err := checkWriteDockerConfigFile(bgCtx, c.kube, cr); err != nil {
@@ -526,24 +526,33 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	return mo, nil
 }
 
-func (c *external) Delete(ctx context.Context, mg resource.Managed) error {
+func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
 	cr, ok := mg.(*apisv1alpha1.Cluster)
 	if !ok {
-		return errors.New(errNotCluster)
+		return managed.ExternalDelete{}, errors.New(errNotCluster)
 	}
+	mo := managed.ExternalDelete{}
 
 	log.Info(fmt.Sprintf("Deleting: %s", cr.Name))
 	if err := c.deleteConnectionSecret(ctx, cr); err != nil {
 		log.Info(fmt.Sprintf("Unable to delete connection secret for resource %s, you may need to manually delete the secret; err: %+v", cr.Name, err))
-		return err
+		return mo, err
 	}
 
 	meta.RemoveFinalizer(cr, finalizer)
 	if err := c.kube.Update(ctx, cr); err != nil {
 		log.Info(fmt.Sprintf("Unable to remove finalizer from resource %s, you may need to manually remove the finalizer; err: %+v", cr.Name, err))
-		return err
+		return mo, err
 	}
 
+	return mo, nil
+}
+
+// Disconnect from the provider and close the ExternalClient.
+// Called at the end of reconcile loop. An ExternalClient not requiring
+// to explicitly disconnect to cleanup it resources, can provide a no-op
+// implementation which just return nil.
+func (c *external) Disconnect(ctx context.Context) error {
 	return nil
 }
 
