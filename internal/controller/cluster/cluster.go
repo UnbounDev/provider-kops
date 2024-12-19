@@ -526,24 +526,33 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	return mo, nil
 }
 
-func (c *external) Delete(ctx context.Context, mg resource.Managed) error {
+func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
 	cr, ok := mg.(*apisv1alpha1.Cluster)
 	if !ok {
-		return errors.New(errNotCluster)
+		return managed.ExternalDelete{}, errors.New(errNotCluster)
 	}
+	mo := managed.ExternalDelete{}
 
 	log.Info(fmt.Sprintf("Deleting: %s", cr.Name))
 	if err := c.deleteConnectionSecret(ctx, cr); err != nil {
 		log.Info(fmt.Sprintf("Unable to delete connection secret for resource %s, you may need to manually delete the secret; err: %+v", cr.Name, err))
-		return err
+		return mo, err
 	}
 
 	meta.RemoveFinalizer(cr, finalizer)
 	if err := c.kube.Update(ctx, cr); err != nil {
 		log.Info(fmt.Sprintf("Unable to remove finalizer from resource %s, you may need to manually remove the finalizer; err: %+v", cr.Name, err))
-		return err
+		return mo, err
 	}
 
+	return mo, nil
+}
+
+// Disconnect from the provider and close the ExternalClient.
+// Called at the end of reconcile loop. An ExternalClient not requiring
+// to explicitly disconnect to cleanup it resources, can provide a no-op
+// implementation which just return nil.
+func (c *external) Disconnect(ctx context.Context) error {
 	return nil
 }
 
