@@ -16,7 +16,7 @@ import (
 	apisv1alpha1 "github.com/crossplane/provider-kops/apis/v1alpha1"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

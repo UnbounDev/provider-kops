@@ -12,8 +12,8 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	apisv1alpha1 "github.com/crossplane/provider-kops/apis/v1alpha1"
 	"github.com/pkg/errors"
-	"gopkg.in/ini.v1"
-	"gopkg.in/yaml.v3"
+	ini "gopkg.in/ini.v1"
+	yaml "gopkg.in/yaml.v3"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
