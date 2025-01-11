@@ -503,7 +503,6 @@ func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *apisv1alpha1.
 		fmt.Sprintf("--drain-timeout=%s", *rollingUpdateOpts.DrainTimeout),
 		fmt.Sprintf("--fail-on-drain-error=%t", *rollingUpdateOpts.FailOnDrainError),
 		fmt.Sprintf("--fail-on-validate-error=%t", *rollingUpdateOpts.FailOnValidateError),
-		fmt.Sprintf("--force=%t", *rollingUpdateOpts.Force),
 		fmt.Sprintf("--node-interval=%s", *rollingUpdateOpts.NodeInterval),
 		fmt.Sprintf("--post-drain-delay=%s", *rollingUpdateOpts.PostDrainDelay),
 		fmt.Sprintf("--validate-count=%d", *rollingUpdateOpts.ValidateCount),
@@ -512,6 +511,9 @@ func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *apisv1alpha1.
 	)
 	if *rollingUpdateOpts.CloudOnly {
 		cmd.Args = append(cmd.Args, "--cloudonly")
+	}
+	if *rollingUpdateOpts.Force {
+		cmd.Args = append(cmd.Args, "--force")
 	}
 	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
 	log.Info(fmt.Sprintf("run: %s", cmd.String()))
