@@ -13,7 +13,7 @@ require (
 	k8s.io/api v0.32.0
 	k8s.io/apimachinery v0.32.0
 	k8s.io/client-go v0.32.0
-	sigs.k8s.io/controller-runtime v0.19.3
+	sigs.k8s.io/controller-runtime v0.20.1
 	sigs.k8s.io/controller-tools v0.16.5
 )
 
@@ -41,6 +41,7 @@ require (
 	github.com/gobuffalo/flect v1.0.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/btree v1.1.3 // indirect
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -67,7 +68,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.33.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/exp v0.0.0-20241217172543-b2144cdd0a67 // indirect
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/oauth2 v0.24.0 // indirect
