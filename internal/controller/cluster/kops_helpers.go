@@ -456,6 +456,11 @@ func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *apisv1alpha1.
 
 	rollingUpdateOpts := cr.Spec.ForProvider.RollingUpdateOpts
 
+	if rollingUpdateOpts.Enabled == &defaultFalse {
+		log.Debug(fmt.Sprintf("Skipped Rolling Update for %s", getClusterExternalName(cr)))
+		return nil
+	}
+
 	if rollingUpdateOpts.BastionInterval == nil {
 		rollingUpdateOpts.BastionInterval = &defaultInterval15s
 	}
@@ -521,7 +526,7 @@ func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *apisv1alpha1.
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrap(err, string(output))
 	} else {
-		log.Debug(fmt.Sprintf("Applied Update:%s", string(output)))
+		log.Debug(fmt.Sprintf("Applied Update to %s : %s", getClusterExternalName(cr), string(output)))
 	}
 	return nil
 }

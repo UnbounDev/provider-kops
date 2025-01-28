@@ -602,6 +602,9 @@ spec:
                       drainTimeout:
                         default: 15m0s
                         type: string
+                      enabled:
+                        default: true
+                        type: boolean
                       failOnDrainError:
                         default: true
                         type: boolean
