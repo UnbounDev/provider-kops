@@ -416,6 +416,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 
 		// force cloudonly roll for initial cluster creation to supply secrets to hosts
 		truePtr := bool(true)
+		cr.Spec.ForProvider.RollingUpdateOpts.Enabled = &truePtr
 		cr.Spec.ForProvider.RollingUpdateOpts.CloudOnly = &truePtr
 		if err := c.service.rollingUpdateCluster(bgCtx, cr); err != nil {
 			return errors.Wrap(err, oneShotError)

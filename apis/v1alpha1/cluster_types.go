@@ -47,6 +47,8 @@ type ClusterParameters struct {
 }
 
 type RollingUpdateOptsSpec struct {
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
 	// +kubebuilder:default="15s"
 	BastionInterval *string `json:"bastionInterval,omitempty"`
 	// +kubebuilder:default=false
