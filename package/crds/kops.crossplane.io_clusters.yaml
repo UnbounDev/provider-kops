@@ -321,7 +321,61 @@ spec:
                             type: string
                         type: object
                       kubeDNS:
+                        description: |-
+                          KubeDNSSpec
+                          for options description; ref: https://github.com/kubernetes/kops/blob/69baa44474e7dc7b8f238adeacc349c22070fca9/pkg/apis/kops/cluster.go#L568
                         properties:
+                          nodeLocalDNS:
+                            description: NodeLocalDNS specifies the configuration
+                              for the node-local-dns addon
+                            properties:
+                              additionalConfig:
+                                description: AdditionalConfig is used to provide additional
+                                  config for node local dns by the user - it will
+                                  include the original CoreFile made by kOps.
+                                type: string
+                              cpuRequest:
+                                description: CPURequest specifies the cpu requests
+                                  of each node-local-dns container in the daemonset.
+                                  Default 25m.
+                                type: string
+                              enabled:
+                                default: false
+                                description: Enabled activates the node-local-dns
+                                  addon.
+                                type: boolean
+                              externalCoreFile:
+                                description: ExternalCoreFile is used to provide a
+                                  complete NodeLocalDNS CoreFile by the user - ignores
+                                  other provided flags which modify the CoreFile.
+                                type: string
+                              forwardToKubeDNS:
+                                description: If enabled, nodelocal dns will use kubedns
+                                  as a default upstream.
+                                type: boolean
+                              image:
+                                description: Image overrides the default container
+                                  image used for node-local-dns addon.
+                                type: string
+                              localIP:
+                                description: Local listen IP address. It can be any
+                                  IP in the 169.254.20.0/16 space or any other IP
+                                  address that can be guaranteed to not collide with
+                                  any existing IP.
+                                type: string
+                              memoryRequest:
+                                description: MemoryRequest specifies the memory requests
+                                  of each node-local-dns container in the daemonset.
+                                  Default 5Mi.
+                                type: string
+                              podAnnotations:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  PodAnnotations makes possible to add additional annotations to node-local-dns.
+                                  Default: none
+                                type: object
+                            type: object
                           provider:
                             type: string
                         required:
@@ -379,6 +433,132 @@ spec:
                             required:
                             - version
                             type: object
+                        type: object
+                      nodeProblemDetector:
+                        description: |-
+                          NodeProblemDetectorSpec
+                          for options description; ref: https://github.com/kubernetes/kops/blob/69baa44474e7dc7b8f238adeacc349c22070fca9/pkg/apis/kops/componentconfig.go#L1068
+                        properties:
+                          cpuLimit:
+                            description: CPULimit of NodeProblemDetector container.
+                            type: string
+                          cpuRequest:
+                            default: 10m
+                            description: CPURequest of NodeProblemDetector container.
+                            type: string
+                          enabled:
+                            default: false
+                            description: Enabled enables the NodeProblemDetector.
+                            type: boolean
+                          image:
+                            description: Image is the NodeProblemDetector container
+                              image used.
+                            type: string
+                          memoryLimit:
+                            default: 80Mi
+                            description: MemoryLimit of NodeProblemDetector container.
+                            type: string
+                          memoryRequest:
+                            default: 80Mi
+                            description: MemoryRequest of NodeProblemDetector container.
+                            type: string
+                        type: object
+                      nodeTerminationHandler:
+                        description: |-
+                          NodeTerminationHandlerSpec
+                          for options description; ref: https://github.com/kubernetes/kops/blob/69baa44474e7dc7b8f238adeacc349c22070fca9/pkg/apis/kops/componentconfig.go#L995
+                        properties:
+                          cpuRequest:
+                            default: 50m
+                            description: CPURequest of NodeTerminationHandler container.
+                            type: string
+                          deleteSQSMsgIfNodeNotFound:
+                            default: false
+                            description: |-
+                              DeleteSQSMsgIfNodeNotFound makes node termination handler delete the SQS Message from the SQS Queue if the targeted node is not found.
+                              Only used in Queue Processor mode.
+                            type: boolean
+                          enableRebalanceDraining:
+                            default: false
+                            description: EnableRebalanceDraining makes node termination
+                              handler drain nodes when the rebalance recommendation
+                              notice is received.
+                            type: boolean
+                          enableRebalanceMonitoring:
+                            default: false
+                            description: |-
+                              EnableRebalanceMonitoring makes node termination handler cordon nodes when the rebalance recommendation notice is received.
+                              In queue-processor mode, cannot be enabled without rebalance draining.
+                            type: boolean
+                          enableSQSTerminationDraining:
+                            default: true
+                            description: EnableSQSTerminationDraining enables queue-processor
+                              mode which drains nodes when an SQS termination event
+                              is received.
+                            type: boolean
+                          enableScheduledEventDraining:
+                            default: true
+                            description: |-
+                              EnableScheduledEventDraining makes node termination handler drain nodes before the maintenance window starts for an EC2 instance scheduled event.
+                              Cannot be disabled in queue-processor mode.
+                            type: boolean
+                          enableSpotInterruptionDraining:
+                            default: true
+                            description: |-
+                              EnableSpotInterruptionDraining makes node termination handler drain nodes when spot interruption termination notice is received.
+                              Cannot be disabled in queue-processor mode.
+                            type: boolean
+                          enabled:
+                            default: false
+                            description: Enabled enables the node termination handler.
+                            type: boolean
+                          excludeFromLoadBalancers:
+                            default: true
+                            description: ExcludeFromLoadBalancers makes node termination
+                              handler will mark for exclusion from load balancers
+                              before node are cordoned.
+                            type: boolean
+                          managedASGTag:
+                            default: aws-node-termination-handler/managed
+                            description: |-
+                              ManagedASGTag is the tag used to determine which nodes NTH can take action on
+                              This field has kept its name even though it now maps to the --managed-tag flag due to keeping the API stable.
+                              Node termination handler does no longer check the ASG for this tag, but the actual EC2 instances.
+                            type: string
+                          memoryLimit:
+                            description: MemoryLimit of NodeTerminationHandler container.
+                            type: string
+                          memoryRequest:
+                            default: 64Mi
+                            description: MemoryRequest of NodeTerminationHandler container.
+                            type: string
+                          podTerminationGracePeriod:
+                            default: -1
+                            description: |-
+                              PodTerminationGracePeriod is the time in seconds given to each pod to terminate gracefully.
+                              If negative, the default value specified in the pod will be used, which defaults to 30 seconds if not specified for the pod.
+                            format: int32
+                            type: integer
+                          prometheusEnable:
+                            default: false
+                            description: EnablePrometheusMetrics enables the "/metrics"
+                              endpoint.
+                            type: boolean
+                          taintNode:
+                            default: false
+                            description: TaintNode makes node termination handler
+                              taint nodes when an interruption event occurs.
+                            type: boolean
+                          version:
+                            description: Version is the container image tag used.
+                            type: string
+                          webhookTemplate:
+                            description: Replaces the default webhook message template.
+                            type: string
+                          webhookURL:
+                            description: If specified, posts event data to URL upon
+                              instance interruption action.
+                            type: string
                         type: object
                       nonMasqueradeCIDR:
                         type: string
@@ -1133,7 +1313,61 @@ spec:
                             type: string
                         type: object
                       kubeDNS:
+                        description: |-
+                          KubeDNSSpec
+                          for options description; ref: https://github.com/kubernetes/kops/blob/69baa44474e7dc7b8f238adeacc349c22070fca9/pkg/apis/kops/cluster.go#L568
                         properties:
+                          nodeLocalDNS:
+                            description: NodeLocalDNS specifies the configuration
+                              for the node-local-dns addon
+                            properties:
+                              additionalConfig:
+                                description: AdditionalConfig is used to provide additional
+                                  config for node local dns by the user - it will
+                                  include the original CoreFile made by kOps.
+                                type: string
+                              cpuRequest:
+                                description: CPURequest specifies the cpu requests
+                                  of each node-local-dns container in the daemonset.
+                                  Default 25m.
+                                type: string
+                              enabled:
+                                default: false
+                                description: Enabled activates the node-local-dns
+                                  addon.
+                                type: boolean
+                              externalCoreFile:
+                                description: ExternalCoreFile is used to provide a
+                                  complete NodeLocalDNS CoreFile by the user - ignores
+                                  other provided flags which modify the CoreFile.
+                                type: string
+                              forwardToKubeDNS:
+                                description: If enabled, nodelocal dns will use kubedns
+                                  as a default upstream.
+                                type: boolean
+                              image:
+                                description: Image overrides the default container
+                                  image used for node-local-dns addon.
+                                type: string
+                              localIP:
+                                description: Local listen IP address. It can be any
+                                  IP in the 169.254.20.0/16 space or any other IP
+                                  address that can be guaranteed to not collide with
+                                  any existing IP.
+                                type: string
+                              memoryRequest:
+                                description: MemoryRequest specifies the memory requests
+                                  of each node-local-dns container in the daemonset.
+                                  Default 5Mi.
+                                type: string
+                              podAnnotations:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  PodAnnotations makes possible to add additional annotations to node-local-dns.
+                                  Default: none
+                                type: object
+                            type: object
                           provider:
                             type: string
                         required:
@@ -1191,6 +1425,132 @@ spec:
                             required:
                             - version
                             type: object
+                        type: object
+                      nodeProblemDetector:
+                        description: |-
+                          NodeProblemDetectorSpec
+                          for options description; ref: https://github.com/kubernetes/kops/blob/69baa44474e7dc7b8f238adeacc349c22070fca9/pkg/apis/kops/componentconfig.go#L1068
+                        properties:
+                          cpuLimit:
+                            description: CPULimit of NodeProblemDetector container.
+                            type: string
+                          cpuRequest:
+                            default: 10m
+                            description: CPURequest of NodeProblemDetector container.
+                            type: string
+                          enabled:
+                            default: false
+                            description: Enabled enables the NodeProblemDetector.
+                            type: boolean
+                          image:
+                            description: Image is the NodeProblemDetector container
+                              image used.
+                            type: string
+                          memoryLimit:
+                            default: 80Mi
+                            description: MemoryLimit of NodeProblemDetector container.
+                            type: string
+                          memoryRequest:
+                            default: 80Mi
+                            description: MemoryRequest of NodeProblemDetector container.
+                            type: string
+                        type: object
+                      nodeTerminationHandler:
+                        description: |-
+                          NodeTerminationHandlerSpec
+                          for options description; ref: https://github.com/kubernetes/kops/blob/69baa44474e7dc7b8f238adeacc349c22070fca9/pkg/apis/kops/componentconfig.go#L995
+                        properties:
+                          cpuRequest:
+                            default: 50m
+                            description: CPURequest of NodeTerminationHandler container.
+                            type: string
+                          deleteSQSMsgIfNodeNotFound:
+                            default: false
+                            description: |-
+                              DeleteSQSMsgIfNodeNotFound makes node termination handler delete the SQS Message from the SQS Queue if the targeted node is not found.
+                              Only used in Queue Processor mode.
+                            type: boolean
+                          enableRebalanceDraining:
+                            default: false
+                            description: EnableRebalanceDraining makes node termination
+                              handler drain nodes when the rebalance recommendation
+                              notice is received.
+                            type: boolean
+                          enableRebalanceMonitoring:
+                            default: false
+                            description: |-
+                              EnableRebalanceMonitoring makes node termination handler cordon nodes when the rebalance recommendation notice is received.
+                              In queue-processor mode, cannot be enabled without rebalance draining.
+                            type: boolean
+                          enableSQSTerminationDraining:
+                            default: true
+                            description: EnableSQSTerminationDraining enables queue-processor
+                              mode which drains nodes when an SQS termination event
+                              is received.
+                            type: boolean
+                          enableScheduledEventDraining:
+                            default: true
+                            description: |-
+                              EnableScheduledEventDraining makes node termination handler drain nodes before the maintenance window starts for an EC2 instance scheduled event.
+                              Cannot be disabled in queue-processor mode.
+                            type: boolean
+                          enableSpotInterruptionDraining:
+                            default: true
+                            description: |-
+                              EnableSpotInterruptionDraining makes node termination handler drain nodes when spot interruption termination notice is received.
+                              Cannot be disabled in queue-processor mode.
+                            type: boolean
+                          enabled:
+                            default: false
+                            description: Enabled enables the node termination handler.
+                            type: boolean
+                          excludeFromLoadBalancers:
+                            default: true
+                            description: ExcludeFromLoadBalancers makes node termination
+                              handler will mark for exclusion from load balancers
+                              before node are cordoned.
+                            type: boolean
+                          managedASGTag:
+                            default: aws-node-termination-handler/managed
+                            description: |-
+                              ManagedASGTag is the tag used to determine which nodes NTH can take action on
+                              This field has kept its name even though it now maps to the --managed-tag flag due to keeping the API stable.
+                              Node termination handler does no longer check the ASG for this tag, but the actual EC2 instances.
+                            type: string
+                          memoryLimit:
+                            description: MemoryLimit of NodeTerminationHandler container.
+                            type: string
+                          memoryRequest:
+                            default: 64Mi
+                            description: MemoryRequest of NodeTerminationHandler container.
+                            type: string
+                          podTerminationGracePeriod:
+                            default: -1
+                            description: |-
+                              PodTerminationGracePeriod is the time in seconds given to each pod to terminate gracefully.
+                              If negative, the default value specified in the pod will be used, which defaults to 30 seconds if not specified for the pod.
+                            format: int32
+                            type: integer
+                          prometheusEnable:
+                            default: false
+                            description: EnablePrometheusMetrics enables the "/metrics"
+                              endpoint.
+                            type: boolean
+                          taintNode:
+                            default: false
+                            description: TaintNode makes node termination handler
+                              taint nodes when an interruption event occurs.
+                            type: boolean
+                          version:
+                            description: Version is the container image tag used.
+                            type: string
+                          webhookTemplate:
+                            description: Replaces the default webhook message template.
+                            type: string
+                          webhookURL:
+                            description: If specified, posts event data to URL upon
+                              instance interruption action.
+                            type: string
                         type: object
                       nonMasqueradeCIDR:
                         type: string

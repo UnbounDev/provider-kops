@@ -162,6 +162,12 @@ spec:
       networking:
         calico:
           version: v3.28.2
+      nodeProblemDetector:
+        enabled: true
+        image: node-problem-detector-node-problem-detector:v0.8.20
+      nodeTerminationHandler:
+        enabled: true
+        version: v1.25.1
       nonMasqueradeCIDR: 100.64.0.0/10
       sshAccess:
       - 0.0.0.0/0
