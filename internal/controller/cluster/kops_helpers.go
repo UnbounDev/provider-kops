@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"slices"
@@ -25,15 +26,19 @@ func (k *kopsClient) observeCluster(ctx context.Context, cr *apisv1alpha1.Cluste
 	instanceGroupSpecMap := map[string]*apisv1alpha1.KopsInstanceGroupSpec{}
 	secretsObservation := []*apisv1alpha1.SecretObservation{}
 
+	if err := k.forceKubecfgSNI(ctx, cr); err != nil {
+		return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, errors.Wrapf(err, "force kubecfg sni for %s", getClusterExternalName(cr))
+	}
+
 	// pull the cluster definition
 	{
 		output, err := k.kopsGet(ctx, cr, "cluster", []string{"--output=yaml"})
 		if err != nil {
-			return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, errors.Wrapf(err, "error getting cluster")
+			return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, errors.Wrapf(err, "error getting cluster %s", getClusterExternalName(cr))
 		}
 
 		if err := yaml.Unmarshal(output, clusterYaml); err != nil {
-			return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, errors.Wrapf(err, "error rendering cluster")
+			return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, errors.Wrapf(err, "error rendering cluster %s", getClusterExternalName(cr))
 		}
 	}
 
@@ -531,6 +536,55 @@ func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *apisv1alpha1.
 	return nil
 }
 
+func (k *kopsClient) forceKubecfgSNI(ctx context.Context, cr *apisv1alpha1.Cluster) error {
+
+	// overwrite the tls server name to force usage of the kops api dns
+	server := ""
+
+	//nolint:gosec
+	cmd := exec.CommandContext(
+		ctx,
+		"kubectl",
+		"config",
+		"view",
+		fmt.Sprintf("-ojsonpath='{.clusters[?(@.name == \"%s\")].cluster.server}'", getClusterExternalName(cr)),
+	)
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return errors.Wrapf(err, "cmd: %s; output: %s", cmd.String(), string(output))
+	} else {
+		server = strings.TrimSpace(string(output))
+	}
+
+	// Extract the domain from the server URL
+	u, err := url.Parse(strings.Trim(server, "'"))
+	if err != nil {
+		return errors.Wrapf(err, "failed to parse server URL: %s", server)
+	}
+	serverDomain := u.Hostname()
+
+	//nolint:gosec
+	cmd = exec.CommandContext(
+		ctx,
+		"kubectl",
+		"config",
+		"set-cluster",
+		getClusterExternalName(cr),
+		"--tls-server-name",
+		serverDomain,
+	)
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return errors.Wrapf(err, "cmd: %s; output: %s", cmd.String(), string(output))
+	}
+
+	return nil
+}
+
 func (k *kopsClient) kopsExportKubecfgAdmin(ctx context.Context, cr *apisv1alpha1.Cluster, extraArgs []string) error {
 
 	//nolint:gosec
@@ -549,6 +603,10 @@ func (k *kopsClient) kopsExportKubecfgAdmin(ctx context.Context, cr *apisv1alpha
 
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrapf(err, "cmd: %s; output: %s", cmd.String(), string(output))
+	}
+
+	if err := k.forceKubecfgSNI(ctx, cr); err != nil {
+		return errors.Wrapf(err, "force kubecfg sni for %s", getClusterExternalName(cr))
 	}
 
 	return nil

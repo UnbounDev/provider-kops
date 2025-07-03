@@ -565,7 +565,7 @@ func (c *external) deleteConnectionSecret(ctx context.Context, cr *apisv1alpha1.
 				Namespace: cr.Spec.WriteConnectionSecretToReference.Namespace,
 			},
 		}
-		return c.kube.Delete(ctx, secret)
+		return client.IgnoreNotFound(c.kube.Delete(ctx, secret))
 	}
 	return nil
 }
