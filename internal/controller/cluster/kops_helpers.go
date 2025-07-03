@@ -26,10 +26,6 @@ func (k *kopsClient) observeCluster(ctx context.Context, cr *apisv1alpha1.Cluste
 	instanceGroupSpecMap := map[string]*apisv1alpha1.KopsInstanceGroupSpec{}
 	secretsObservation := []*apisv1alpha1.SecretObservation{}
 
-	if err := k.forceKubecfgSNI(ctx, cr); err != nil {
-		return &clusterYaml.Spec, instanceGroupSpecMap, secretsObservation, errors.Wrapf(err, "force kubecfg sni for %s", getClusterExternalName(cr))
-	}
-
 	// pull the cluster definition
 	{
 		output, err := k.kopsGet(ctx, cr, "cluster", []string{"--output=yaml"})
@@ -339,6 +335,14 @@ func (k *kopsClient) validateCluster(ctx context.Context, cr *apisv1alpha1.Clust
 
 	var stdOut, stdErr bytes.Buffer
 	res := &kopsValidationResponse{}
+
+	if err := k.forceKubecfgSNI(ctx, cr); err != nil {
+		// for the case where we haven't initialized the cluster state locally
+		if strings.Contains(err.Error(), "error executing jsonpath") {
+			return res, errors.Wrapf(err, errNoAuth)
+		}
+		return res, err
+	}
 
 	//nolint:gosec
 	cmd := exec.CommandContext(
