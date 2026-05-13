@@ -439,7 +439,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	// don't block when updating the cluster, this takes a while..
 	// at the same time, we need to scream loudly if anything in here breaks
 	// the initial cluster creation in any way
-	go func() { //nolint:contextcheck
+	go func() { //nolint:contextcheck,gosec
 		if err := runCreate(); err != nil {
 			log.Info(fmt.Sprintf("%+v", err))
 			// naive attempt to pass error information into the k8s artifact
@@ -499,7 +499,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	log.Info(fmt.Sprintf("Begin updating: %+v; status: %s", cr.Name, cr.Status.Status))
 
 	// don't block when updating the cluster, this takes a while..
-	go func() { //nolint:contextcheck
+	go func() { //nolint:contextcheck,gosec
 		bgCtx := context.Background()
 
 		if err := checkWriteDockerConfigFile(bgCtx, c.kube, cr); err != nil {

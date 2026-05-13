@@ -151,7 +151,7 @@ func buildKopsYamlStructs(cr *apisv1alpha1.Cluster) (clusterYaml, []instanceGrou
 
 	modifyClusterYaml(cr, &clusterYaml)
 
-	instanceGroupYamls := []instanceGroupYaml{}
+	instanceGroupYamls := make([]instanceGroupYaml, 0, len(cr.Spec.ForProvider.InstanceGroups))
 	for i := range cr.Spec.ForProvider.InstanceGroups {
 		ig := cr.Spec.ForProvider.InstanceGroups[i]
 		instanceGroupYaml := instanceGroupYaml{
