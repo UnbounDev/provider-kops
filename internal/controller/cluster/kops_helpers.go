@@ -129,7 +129,7 @@ func (k *kopsClient) diffClusterV2(_ context.Context, cr *apisv1alpha1.Cluster) 
 		}
 	}
 
-	sourceSecrets := []string{}
+	sourceSecrets := make([]string, 0, len(cr.Status.AtProvider.Secrets))
 	for _, secretObserved := range cr.Status.AtProvider.Secrets {
 		sourceSecrets = append(sourceSecrets, secretObserved.Name)
 	}
@@ -148,7 +148,7 @@ func (k *kopsClient) diffClusterV2(_ context.Context, cr *apisv1alpha1.Cluster) 
 	return changes
 }
 
-func (k *kopsClient) createCluster(_ context.Context, cr *apisv1alpha1.Cluster) error {
+func (k *kopsClient) createCluster(ctx context.Context, cr *apisv1alpha1.Cluster) error {
 
 	fileSuffix := fileSuffixCreate
 
@@ -159,7 +159,7 @@ func (k *kopsClient) createCluster(_ context.Context, cr *apisv1alpha1.Cluster) 
 
 	// now create the cluster config
 	//nolint:gosec
-	cmd := exec.Command(
+	cmd := exec.CommandContext(ctx,
 		"kops",
 		"create",
 		fmt.Sprintf("-f%s", getKopsClusterFilename(cr, fileSuffix)),
@@ -177,7 +177,7 @@ func (k *kopsClient) createCluster(_ context.Context, cr *apisv1alpha1.Cluster) 
 
 	// now create the pub ssh secret
 	//nolint:gosec
-	cmd = exec.Command(
+	cmd = exec.CommandContext(ctx,
 		"kops",
 		"create",
 		"sshpublickey",
@@ -197,7 +197,7 @@ func (k *kopsClient) createCluster(_ context.Context, cr *apisv1alpha1.Cluster) 
 	// now create all instance group configs
 	for _, ig := range cr.Spec.ForProvider.InstanceGroups {
 		//nolint:gosec
-		cmd := exec.Command(
+		cmd := exec.CommandContext(ctx,
 			"kops",
 			"create",
 			fmt.Sprintf("-f%s", getKopsInstanceGroupFilename(cr, &ig, fileSuffix)),
@@ -262,7 +262,7 @@ func (k *kopsClient) createKeypair(ctx context.Context, kube client.Client, cr *
 		args = append(args, fmt.Sprintf("--key=%s", pkFile.Name()))
 	}
 	//nolint:gosec
-	cmd := exec.Command(
+	cmd := exec.CommandContext(ctx,
 		"kops",
 		"create",
 		"keypair",
@@ -307,7 +307,7 @@ func (k *kopsClient) createSecret(ctx context.Context, kube client.Client, cr *a
 		args = append(args, fmt.Sprintf("--filename=%s", f.Name()))
 	}
 	//nolint:gosec
-	cmd := exec.Command(
+	cmd := exec.CommandContext(ctx,
 		"kops",
 		"create",
 		"secret",
@@ -403,7 +403,7 @@ func (k *kopsClient) updateCluster(ctx context.Context, kube client.Client, cr *
 		}
 
 		//nolint:gosec
-		cmd := exec.Command(
+		cmd := exec.CommandContext(ctx,
 			"kops",
 			operation,
 			fmt.Sprintf("-f%s", resourceFilePath),
