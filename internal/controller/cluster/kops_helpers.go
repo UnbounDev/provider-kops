@@ -99,6 +99,13 @@ func (k *kopsClient) diffClusterV2(_ context.Context, cr *apisv1alpha1.Cluster) 
 	clusterYaml, igYamls := buildKopsYamlStructs(cr)
 	changes := []observedDelta{}
 
+	clusterChanged := false
+	//  Detect if kubernetesVersion changed at the cluster level. When it does,
+	// instance groups must also be included in the update so that kops
+	// regenerates their nodeupconfig.yaml in S3 with the new version.
+	kubernetesVersionChanged := cr.Status.AtProvider.ClusterSpec != nil &&
+		cr.Status.AtProvider.ClusterSpec.KubernetesVersion != clusterYaml.Spec.KubernetesVersion
+
 	if !cmp.Equal(cr.Status.AtProvider.ClusterSpec, &clusterYaml.Spec) {
 		diff := cmp.Diff(cr.Status.AtProvider.ClusterSpec, &clusterYaml.Spec)
 		changes = append(changes, observedDelta{
@@ -107,6 +114,7 @@ func (k *kopsClient) diffClusterV2(_ context.Context, cr *apisv1alpha1.Cluster) 
 			ResourceFilePath: getKopsClusterFilename(cr, fileSuffix),
 			Diff:             diff,
 		})
+		clusterChanged = true
 	}
 
 	for _, igDesired := range igYamls {
@@ -125,6 +133,15 @@ func (k *kopsClient) diffClusterV2(_ context.Context, cr *apisv1alpha1.Cluster) 
 				Resource:         instanceGroupResourceDelta,
 				ResourceFilePath: getKopsInstanceGroupFilenameFromYaml(cr, &igDesired, fileSuffix),
 				Diff:             diff,
+			})
+		} else if clusterChanged && kubernetesVersionChanged {
+			// Append instance groups to changes when kubernetesVersion
+			// changed so that kops regenerates nodeupconfig.yaml for each IG
+			changes = append(changes, observedDelta {
+				Operation:		  updateDelta,
+				Resource:		  instanceGroupResourceDelta,
+				ResourceFilePath: getKopsInstanceGroupFilenameFromYaml(cr, &igDesired, fileSuffix),
+				Diff:			  fmt.Sprintf("cluster kubernetesVersion changed from %s to %s, including instance group in update", cr.Status.AtProvider.ClusterSpec.KubernetesVersion, clusterYaml.Spec.KubernetesVersion),
 			})
 		}
 	}
