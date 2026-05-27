@@ -510,6 +510,15 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 			log.Info(fmt.Sprintf("UPDATE ERROR: %s; %+v", err.Error(), err))
 		} else if err := c.service.rollingUpdateCluster(bgCtx, cr); err != nil {
 			log.Info(fmt.Sprintf("ROLLING UPDATE ERROR: %s; %+v", err.Error(), err))
+		} else {
+			// Pass 2: after control-plane is rolled, kops may have pending changes
+			// for worker instance groups (e.g. version skew policy holds back worker
+			// nodeupconfig generation until control-plane is running the new version).
+			if err := c.service.kopsUpdateCluster(bgCtx, cr); err != nil {
+				log.Info(fmt.Sprintf("UPDATE ERROR (pass 2): %s; %+v", err.Error(), err))
+			} else if err := c.service.rollingUpdateCluster(bgCtx, cr); err != nil {
+				log.Info(fmt.Sprintf("ROLLING UPDATE ERROR (pass 2): %s; %+v", err.Error(), err))
+			}
 		}
 
 		if err := c.unlockCluster(bgCtx, cr, []string{providerKopsUpdateLocked}); err != nil {
