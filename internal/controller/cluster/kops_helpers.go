@@ -540,6 +540,31 @@ func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *apisv1alpha1.
 	return nil
 }
 
+// getNamespacesViaKubectl runs the kubectl cli command to get the namespaces in a kops cluster, we use this
+// as a sanity check to validate that the cluster is reachable and that the kubeconfig is valid.
+func (k *kopsClient) getNamespacesViaKubectl(ctx context.Context, cr *apisv1alpha1.Cluster) ([]byte, error) {
+
+	var stdOut, stdErr bytes.Buffer
+
+	//nolint:gosec
+	cmd := exec.CommandContext(
+		ctx,
+		"kubectl",
+		"get",
+		"namespaces",
+	)
+	cmd.Env = append(cmd.Env, getKopsCliEnv(cr, k)...)
+	log.Info(fmt.Sprintf("run: %s", cmd.String()))
+
+	cmd.Stdout = &stdOut
+	cmd.Stderr = &stdErr
+
+	if err := cmd.Run(); err != nil {
+		return []byte{}, errors.Wrapf(err, "cmd: %s; stderr: %s; stdout: %s", cmd.String(), stdErr.String(), stdOut.String())
+	}
+	return stdOut.Bytes(), nil
+}
+
 func (k *kopsClient) forceKubecfgSNI(ctx context.Context, cr *apisv1alpha1.Cluster) error {
 
 	// overwrite the tls server name to force usage of the kops api dns

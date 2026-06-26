@@ -265,6 +265,15 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 				return mo, err
 			}
 		}
+		// now run kubectl sanity check w/ fallback for authentication to the cluster
+		_, err = c.service.getNamespacesViaKubectl(ctx, cr)
+		if err != nil {
+			log.Info(fmt.Sprintf("Kubectl client errors for %s: %s; likely authentication issue, reissuing client credentials", cr.Name, err.Error()))
+			if err := c.service.kopsExportKubecfgAdmin(ctx, cr, []string{}); err != nil {
+				mo.ResourceUpToDate = false
+				return mo, err
+			}
+		}
 
 		if len(output.Failures) == 0 && err == nil {
 			cr.Status.Status = apisv1alpha1.Ready
