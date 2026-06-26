@@ -622,7 +622,7 @@ func (k *kopsClient) kopsExportKubecfgAdmin(ctx context.Context, cr *apisv1alpha
 		"kops",
 		"export",
 		"kubecfg",
-		"--admin duration=1h0m0s",
+		"--admin=1h0m0s",
 		fmt.Sprintf("--name=%s", getClusterExternalName(cr)),
 		fmt.Sprintf("--state=%s", cr.Spec.ForProvider.State),
 	)
