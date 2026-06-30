@@ -11,7 +11,7 @@ include ../../../build/makelib/imagelight.mk
 # ====================================================================================
 # Targets
 
-KOPS_VERSION    := v1.33.0
+KOPS_VERSION    := v1.33.2
 KUBECTL_VERSION := v1.33.13
 
 img.build:
