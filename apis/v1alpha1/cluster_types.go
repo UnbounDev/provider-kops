@@ -483,6 +483,7 @@ type KopsInstanceGroupSpec struct {
 	MaxSize                  int               `yaml:"maxSize" json:"maxSize"`
 	MinSize                  int               `yaml:"minSize" json:"minSize"`
 	NodeLabels               map[string]string `yaml:"nodeLabels,omitempty" json:"nodeLabels,omitempty"`
+	Taints                   []string          `yaml:"taints,omitempty" json:"taints,omitempty"`
 	// +kubebuilder:validation:Enum=ControlPlane;Node;Master
 	Role                 InstanceGroupRole                  `yaml:"role" json:"role"`
 	RollingUpdate        RollingUpdateSpecInstanceGroupSpec `yaml:"rollingUpdate,omitempty" json:"rollingUpdate,omitempty"`
