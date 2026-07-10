@@ -666,6 +666,10 @@ spec:
                               items:
                                 type: string
                               type: array
+                            taints:
+                              items:
+                                type: string
+                              type: array
                           required:
                           - image
                           - machineType
@@ -1651,6 +1655,10 @@ spec:
                         rootVolumeSize:
                           type: integer
                         subnets:
+                          items:
+                            type: string
+                          type: array
+                        taints:
                           items:
                             type: string
                           type: array

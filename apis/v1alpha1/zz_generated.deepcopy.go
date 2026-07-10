@@ -697,6 +697,11 @@ func (in *KopsInstanceGroupSpec) DeepCopyInto(out *KopsInstanceGroupSpec) {
 			(*out)[key] = val
 		}
 	}
+	if in.Taints != nil {
+		in, out := &in.Taints, &out.Taints
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	out.RollingUpdate = in.RollingUpdate
 	if in.Subnets != nil {
 		in, out := &in.Subnets, &out.Subnets

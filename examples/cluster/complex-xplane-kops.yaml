@@ -248,6 +248,8 @@ spec:
         role: Node
         rootVolumeEncryption: true
         rootVolumeSize: 100
+        taints:
+        - dedicated=gpu:NoSchedule
         subnets:
         - cluster-0
         - cluster-1
