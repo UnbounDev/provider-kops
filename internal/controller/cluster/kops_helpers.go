@@ -13,7 +13,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	apisv1alpha1 "github.com/crossplane/provider-kops/apis/v1alpha1"
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
