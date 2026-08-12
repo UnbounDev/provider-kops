@@ -1,5 +1,5 @@
 
-FROM debian:bookworm-slim
+FROM debian:13-slim
 
 ARG TARGETOS
 ARG TARGETARCH
