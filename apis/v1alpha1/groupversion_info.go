@@ -42,5 +42,6 @@ var (
 	SchemeGroupVersion = schema.GroupVersion{Group: Group, Version: Version}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme
+	//nolint:staticcheck // scheme.Builder is deprecated but remains the crossplane provider-template idiom for registering API types.
 	SchemeBuilder = &scheme.Builder{GroupVersion: SchemeGroupVersion}
 )
