@@ -35,6 +35,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 	of := resource.ProviderConfigKinds{
 		Config:    v1alpha1.ProviderConfigGroupVersionKind,
 		UsageList: v1alpha1.ProviderConfigUsageListGroupVersionKind,
+		Usage:     v1alpha1.ProviderConfigUsageGroupVersionKind,
 	}
 
 	r := providerconfig.NewReconciler(mgr, of,
