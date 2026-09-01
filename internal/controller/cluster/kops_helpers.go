@@ -450,7 +450,14 @@ func (k *kopsClient) updateCluster(ctx context.Context, kube client.Client, cr *
 		}
 	}
 
-	return k.kopsUpdateCluster(ctx, cr)
+	if err := k.kopsUpdateCluster(ctx, cr); err == nil {
+		if err := k.forceKubecfgSNI(ctx, cr); err != nil {
+			return errors.Wrapf(err, "force kubecfg sni for %s", getClusterExternalName(cr))
+		}
+		return nil
+	} else {
+		return err
+	}
 }
 
 func (k *kopsClient) rollingUpdateCluster(ctx context.Context, cr *apisv1alpha1.Cluster) error {
