@@ -283,6 +283,10 @@ spec:
                         type: object
                       kubeAPIServer:
                         properties:
+                          additionalServiceAccountIssuers:
+                            items:
+                              type: string
+                            type: array
                           apiAudiences:
                             items:
                               type: string
@@ -562,6 +566,23 @@ spec:
                         type: object
                       nonMasqueradeCIDR:
                         type: string
+                      serviceAccountIssuerDiscovery:
+                        description: |-
+                          ServiceAccountIssuerDiscoverySpec configures OIDC discovery for IRSA (IAM Roles for Service Accounts).
+                          When set, kops publishes OIDC discovery documents to the discovery store and optionally creates
+                          an IAM OIDC provider in the AWS account.
+                        properties:
+                          additionalAudiences:
+                            items:
+                              type: string
+                            type: array
+                          discoveryStore:
+                            type: string
+                          enableAWSOIDCProvider:
+                            type: boolean
+                          publicURL:
+                            type: string
+                        type: object
                       sshAccess:
                         default:
                         - 0.0.0.0/0
@@ -1198,6 +1219,10 @@ spec:
                         type: object
                       kubeAPIServer:
                         properties:
+                          additionalServiceAccountIssuers:
+                            items:
+                              type: string
+                            type: array
                           apiAudiences:
                             items:
                               type: string
@@ -1477,6 +1502,23 @@ spec:
                         type: object
                       nonMasqueradeCIDR:
                         type: string
+                      serviceAccountIssuerDiscovery:
+                        description: |-
+                          ServiceAccountIssuerDiscoverySpec configures OIDC discovery for IRSA (IAM Roles for Service Accounts).
+                          When set, kops publishes OIDC discovery documents to the discovery store and optionally creates
+                          an IAM OIDC provider in the AWS account.
+                        properties:
+                          additionalAudiences:
+                            items:
+                              type: string
+                            type: array
+                          discoveryStore:
+                            type: string
+                          enableAWSOIDCProvider:
+                            type: boolean
+                          publicURL:
+                            type: string
+                        type: object
                       sshAccess:
                         default:
                         - 0.0.0.0/0

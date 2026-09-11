@@ -94,16 +94,17 @@ type KopsClusterSpec struct {
 	NodeTerminationHandler NodeTerminationHandlerSpec `yaml:"nodeTerminationHandler,omitempty" json:"nodeTerminationHandler,omitempty"`
 	ConfigBase             string                     `yaml:"configBase,omitempty" json:"configBase,omitempty"`
 	// +kubebuilder:validation:Enum=containerd
-	ContainerRuntime string             `yaml:"containerRuntime,omitempty" json:"containerRuntime,omitempty"`
-	EncryptionConfig bool               `yaml:"encryptionConfig,omitempty" json:"encryptionConfig,omitempty"`
-	FileAssets       []FileAssetSpec    `yaml:"fileAssets,omitempty" json:"fileAssets,omitempty"`
-	Hooks            []HookSpec         `yaml:"hooks,omitempty" json:"hooks,omitempty"`
-	EtcdClusters     []EtcdClusterSpec  `yaml:"etcdClusters" json:"etcdClusters"`
-	IAM              IAMSpec            `yaml:"iam,omitempty" json:"iam,omitempty"`
-	KubeAPIServer    KubeAPIServerSpec  `yaml:"kubeAPIServer,omitempty" json:"kubeAPIServer,omitempty"`
-	Kubelet          *KubeletConfigSpec `yaml:"kubelet,omitempty" json:"kubelet,omitempty"`
-	KubeProxy        KubeProxySpec      `yaml:"kubeProxy,omitempty" json:"kubeProxy,omitempty"`
-	KubeDNS          KubeDNSSpec        `yaml:"kubeDNS,omitempty" json:"kubeDNS,omitempty"`
+	ContainerRuntime              string                             `yaml:"containerRuntime,omitempty" json:"containerRuntime,omitempty"`
+	EncryptionConfig              bool                               `yaml:"encryptionConfig,omitempty" json:"encryptionConfig,omitempty"`
+	FileAssets                    []FileAssetSpec                    `yaml:"fileAssets,omitempty" json:"fileAssets,omitempty"`
+	Hooks                         []HookSpec                         `yaml:"hooks,omitempty" json:"hooks,omitempty"`
+	EtcdClusters                  []EtcdClusterSpec                  `yaml:"etcdClusters" json:"etcdClusters"`
+	IAM                           IAMSpec                            `yaml:"iam,omitempty" json:"iam,omitempty"`
+	ServiceAccountIssuerDiscovery *ServiceAccountIssuerDiscoverySpec `yaml:"serviceAccountIssuerDiscovery,omitempty" json:"serviceAccountIssuerDiscovery,omitempty"`
+	KubeAPIServer                 KubeAPIServerSpec                  `yaml:"kubeAPIServer,omitempty" json:"kubeAPIServer,omitempty"`
+	Kubelet                       *KubeletConfigSpec                 `yaml:"kubelet,omitempty" json:"kubelet,omitempty"`
+	KubeProxy                     KubeProxySpec                      `yaml:"kubeProxy,omitempty" json:"kubeProxy,omitempty"`
+	KubeDNS                       KubeDNSSpec                        `yaml:"kubeDNS,omitempty" json:"kubeDNS,omitempty"`
 	// +kubebuilder:default={"0.0.0.0/0"}
 	KubernetesApiAccess []string `yaml:"kubernetesApiAccess,omitempty" json:"kubernetesApiAccess,omitempty"`
 	// +kubebuilder:default="v1.29.6"
@@ -359,6 +360,16 @@ type IAMSpec struct {
 	Legacy                 bool `yaml:"legacy" json:"legacy"`
 }
 
+// ServiceAccountIssuerDiscoverySpec configures OIDC discovery for IRSA (IAM Roles for Service Accounts).
+// When set, kops publishes OIDC discovery documents to the discovery store and optionally creates
+// an IAM OIDC provider in the AWS account.
+type ServiceAccountIssuerDiscoverySpec struct {
+	DiscoveryStore        string   `yaml:"discoveryStore,omitempty" json:"discoveryStore,omitempty"`
+	PublicURL             string   `yaml:"publicURL,omitempty" json:"publicURL,omitempty"`
+	EnableAWSOIDCProvider bool     `yaml:"enableAWSOIDCProvider,omitempty" json:"enableAWSOIDCProvider,omitempty"`
+	AdditionalAudiences   []string `yaml:"additionalAudiences,omitempty" json:"additionalAudiences,omitempty"`
+}
+
 type KubeAPIServerSpec struct {
 	APIAudiences               []string `yaml:"apiAudiences,omitempty"   json:"apiAudiences,omitempty"`
 	AuthorizationMode          *string  `yaml:"authorizationMode,omitempty" json:"authorizationMode,omitempty"`
@@ -366,18 +377,19 @@ type KubeAPIServerSpec struct {
 	// +kubebuilder:default=/srv/kubernetes/ca.crt
 	ClientCAFile string `yaml:"clientCAFile,omitempty"             json:"clientCAFile,omitempty"`
 	// +kubebuilder:default=true
-	DisableBasicAuth         bool   `yaml:"disableBasicAuth,omitempty"         json:"disableBasicAuth,omitempty"`
-	OidcClientID             string `yaml:"oidcClientID,omitempty"             json:"oidcClientID,omitempty"`
-	OidcGroupsClaim          string `yaml:"oidcGroupsClaim,omitempty"          json:"oidcGroupsClaim,omitempty"`
-	OidcIssuerURL            string `yaml:"oidcIssuerURL,omitempty"            json:"oidcIssuerURL,omitempty"`
-	OidcUsernameClaim        string `yaml:"oidcUsernameClaim,omitempty"        json:"oidcUsernameClaim,omitempty"`
-	AuditLogMaxAge           int    `yaml:"auditLogMaxAge,omitempty"           json:"auditLogMaxAge,omitempty"`
-	AuditLogMaxBackups       int    `yaml:"auditLogMaxBackups,omitempty"       json:"auditLogMaxBackups,omitempty"`
-	AuditLogMaxSize          int    `yaml:"auditLogMaxSize,omitempty"          json:"auditLogMaxSize,omitempty"`
-	AuditLogPath             string `yaml:"auditLogPath,omitempty"             json:"auditLogPath,omitempty"`
-	AuditPolicyFile          string `yaml:"auditPolicyFile,omitempty"          json:"auditPolicyFile,omitempty"`
-	AuditWebhookBatchMaxWait string `yaml:"auditWebhookBatchMaxWait,omitempty" json:"auditWebhookBatchMaxWait,omitempty"`
-	AuditWebhookConfigFile   string `yaml:"auditWebhookConfigFile,omitempty"   json:"auditWebhookConfigFile,omitempty"`
+	DisableBasicAuth                bool     `yaml:"disableBasicAuth,omitempty"         json:"disableBasicAuth,omitempty"`
+	OidcClientID                    string   `yaml:"oidcClientID,omitempty"             json:"oidcClientID,omitempty"`
+	OidcGroupsClaim                 string   `yaml:"oidcGroupsClaim,omitempty"          json:"oidcGroupsClaim,omitempty"`
+	OidcIssuerURL                   string   `yaml:"oidcIssuerURL,omitempty"            json:"oidcIssuerURL,omitempty"`
+	OidcUsernameClaim               string   `yaml:"oidcUsernameClaim,omitempty"        json:"oidcUsernameClaim,omitempty"`
+	AuditLogMaxAge                  int      `yaml:"auditLogMaxAge,omitempty"           json:"auditLogMaxAge,omitempty"`
+	AuditLogMaxBackups              int      `yaml:"auditLogMaxBackups,omitempty"       json:"auditLogMaxBackups,omitempty"`
+	AuditLogMaxSize                 int      `yaml:"auditLogMaxSize,omitempty"          json:"auditLogMaxSize,omitempty"`
+	AuditLogPath                    string   `yaml:"auditLogPath,omitempty"             json:"auditLogPath,omitempty"`
+	AuditPolicyFile                 string   `yaml:"auditPolicyFile,omitempty"          json:"auditPolicyFile,omitempty"`
+	AuditWebhookBatchMaxWait        string   `yaml:"auditWebhookBatchMaxWait,omitempty" json:"auditWebhookBatchMaxWait,omitempty"`
+	AuditWebhookConfigFile          string   `yaml:"auditWebhookConfigFile,omitempty"   json:"auditWebhookConfigFile,omitempty"`
+	AdditionalServiceAccountIssuers []string `yaml:"additionalServiceAccountIssuers,omitempty" json:"additionalServiceAccountIssuers,omitempty"`
 }
 
 type KubeletConfigSpec struct {
